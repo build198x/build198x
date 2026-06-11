@@ -661,26 +661,48 @@ fn encode_native(conv: &Conversion, format: Format) -> Result<Vec<u8>, String> {
 
 /// Render the converted result through its resolved palette to PNG bytes —
 /// a diagnostic of this conversion, per `decisions/play198x-boundary.md`.
+///
+/// The preview is **PAR-corrected to display proportions**: each mode pixel
+/// is duplicated by the mode's `pixel_aspect` from mediaspec — pure integer
+/// duplication, no resampling. C64 multicolour (2:1) doubles each pixel
+/// horizontally (160×200 mode pixels → 320×200 PNG); Amiga hires (1:2)
+/// doubles each row (640×256 → 640×512); square-pixel modes emit 1:1.
 fn render_preview_png(conv: &Conversion) -> Result<Vec<u8>, String> {
-    let mut rgb = Vec::with_capacity(conv.pixels.len() * 3);
-    for &idx in &conv.pixels {
-        let c = conv
-            .palette
-            .get(usize::from(idx))
-            .copied()
-            .unwrap_or(Rgb { r: 0, g: 0, b: 0 });
-        rgb.extend_from_slice(&[c.r, c.g, c.b]);
+    let mode = mediaspec::machine(&conv.machine_id)
+        .and_then(|m| m.mode(&conv.mode_name))
+        .ok_or_else(|| {
+            format!(
+                "cannot render preview: unknown machine/mode `{}`/`{}`",
+                conv.machine_id, conv.mode_name
+            )
+        })?;
+    let sx = u32::from(mode.pixel_aspect.horizontal);
+    let sy = u32::from(mode.pixel_aspect.vertical);
+    let out_w = conv.width * sx;
+    let out_h = conv.height * sy;
+
+    let row_len = conv.width as usize;
+    let mut rgb = Vec::with_capacity(out_w as usize * out_h as usize * 3);
+    for row in conv.pixels.chunks(row_len.max(1)) {
+        let mut line = Vec::with_capacity(out_w as usize * 3);
+        for &idx in row {
+            let c = conv
+                .palette
+                .get(usize::from(idx))
+                .copied()
+                .unwrap_or(Rgb { r: 0, g: 0, b: 0 });
+            for _ in 0..sx {
+                line.extend_from_slice(&[c.r, c.g, c.b]);
+            }
+        }
+        for _ in 0..sy {
+            rgb.extend_from_slice(&line);
+        }
     }
     let mut out = Vec::new();
     let encoder = image::codecs::png::PngEncoder::new(&mut out);
-    image::ImageEncoder::write_image(
-        encoder,
-        &rgb,
-        conv.width,
-        conv.height,
-        image::ExtendedColorType::Rgb8,
-    )
-    .map_err(|e| format!("cannot encode preview PNG: {e}"))?;
+    image::ImageEncoder::write_image(encoder, &rgb, out_w, out_h, image::ExtendedColorType::Rgb8)
+        .map_err(|e| format!("cannot encode preview PNG: {e}"))?;
     Ok(out)
 }
 
@@ -932,7 +954,8 @@ fn image_usage() -> &'static str {
      \x20 -o, --output <path>        output path (single input only;\n\
      \x20                            default: <input stem>.<ext> in the cwd)\n\
      \x20 --preview <path.png>       also render the converted result to a PNG preview\n\
-     \x20                            (single input only)\n\
+     \x20                            at display proportions (mode pixels duplicated by\n\
+     \x20                            the mode's pixel aspect; single input only)\n\
      \x20 --force                    overwrite existing outputs\n\
      \x20 --report <path>            write the JSON report to a file instead of stdout\n\
      \n\

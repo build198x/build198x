@@ -627,8 +627,10 @@ fn smoke_koala_output_decodes_and_preview_is_valid_png() {
     assert_eq!(code, 0, "{stdout}");
     let bytes = std::fs::read(td.path().join("in.koa")).expect("read koala");
     build198x::format::koala::decode(&bytes).expect("koala output decodes");
+    // Multicolour mode pixels are 2:1, so the 160×200 mode grid renders at
+    // display proportions: each pixel duplicated horizontally → 320×200.
     let preview = image::open(td.path().join("prev.png")).expect("preview is a valid png");
-    assert_eq!((preview.width(), preview.height()), (160, 200));
+    assert_eq!((preview.width(), preview.height()), (320, 200));
 }
 
 #[test]
@@ -719,8 +721,14 @@ fn ilbm_rejects_palette_flag_and_accepts_explicit_mode() {
             "ilbm",
             "--mode",
             "hires-pal",
+            "--preview",
+            "prev.png",
         ],
     );
     assert_eq!(code, 0, "{stdout}");
     assert!(stdout.contains("\"mode\": \"hires-pal\""));
+    // Hires pixels are 1:2, so the 640×256 mode grid renders at display
+    // proportions: each row duplicated vertically → 640×512.
+    let preview = image::open(td.path().join("prev.png")).expect("preview is a valid png");
+    assert_eq!((preview.width(), preview.height()), (640, 512));
 }
