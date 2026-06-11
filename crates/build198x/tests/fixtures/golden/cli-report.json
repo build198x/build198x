@@ -14,7 +14,8 @@
     "dither": "ordered8",
     "strength": 32,
     "matte": "000000",
-    "force": false
+    "force": false,
+    "exhaustive_background": false
   },
   "files": [
     {

@@ -107,6 +107,8 @@ fn test_image() -> Ilbm {
         palette,
         pixels,
         camg: 0,
+        x_aspect: 10,
+        y_aspect: 11,
     }
 }
 

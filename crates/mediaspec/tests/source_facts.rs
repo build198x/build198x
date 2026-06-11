@@ -59,39 +59,6 @@ fn spectrum_emu198x_v1_matches_transcription() {
     );
 }
 
-/// Spectrum `fuse-v1` matches the `rgb_colours` table in
-/// `emulators/zx-spectrum/fuse-emulator-fuse/ui/gtk/gtkdisplay.c`
-/// (normal 192, bright 255 per active primary) — full table, freezing the
-/// content-versioned name.
-#[test]
-fn spectrum_fuse_v1_matches_transcription() {
-    let m = machine("sinclair-zx-spectrum").expect("machine");
-    let p = m.interpretation("fuse-v1").expect("interpretation");
-    let expected: &[Rgb] = &[
-        rgb(0, 0, 0),       // 0: black
-        rgb(0, 0, 192),     // 1: blue
-        rgb(192, 0, 0),     // 2: red
-        rgb(192, 0, 192),   // 3: magenta
-        rgb(0, 192, 0),     // 4: green
-        rgb(0, 192, 192),   // 5: cyan
-        rgb(192, 192, 0),   // 6: yellow
-        rgb(192, 192, 192), // 7: white
-        rgb(0, 0, 0),       // 8: bright black (== black, shared)
-        rgb(0, 0, 255),     // 9: bright blue
-        rgb(255, 0, 0),     // 10: bright red
-        rgb(255, 0, 255),   // 11: bright magenta
-        rgb(0, 255, 0),     // 12: bright green
-        rgb(0, 255, 255),   // 13: bright cyan
-        rgb(255, 255, 0),   // 14: bright yellow
-        rgb(255, 255, 255), // 15: bright white
-    ];
-    assert_eq!(p.colours, expected);
-    assert_eq!(
-        p.source,
-        "emulators/zx-spectrum/fuse-emulator-fuse/ui/gtk/gtkdisplay.c"
-    );
-}
-
 /// C64 multicolour bitmap is 160×200 in double-wide (2:1) pixels with 4×8
 /// cells, three free per-cell colours, and a 16-colour palette
 /// (`syntheses/commodore-c64/vic-ii-screen-memory-modes-sprites.md` § 5).

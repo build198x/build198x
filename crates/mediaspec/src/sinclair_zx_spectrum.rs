@@ -50,27 +50,13 @@ const EMU198X_V1: &[Rgb] = &[
     rgb(0xFF, 0xFF, 0xFF), // 15: bright white
 ];
 
-/// `fuse-v1`: the Fuse emulator's level table — normal = 192, bright = 255
-/// per active primary. Transcribed from the `rgb_colours[16][3]` table in
-/// `emulators/zx-spectrum/fuse-emulator-fuse/ui/gtk/gtkdisplay.c`.
-const FUSE_V1: &[Rgb] = &[
-    rgb(0, 0, 0),       // 0: black
-    rgb(0, 0, 192),     // 1: blue
-    rgb(192, 0, 0),     // 2: red
-    rgb(192, 0, 192),   // 3: magenta
-    rgb(0, 192, 0),     // 4: green
-    rgb(0, 192, 192),   // 5: cyan
-    rgb(192, 192, 0),   // 6: yellow
-    rgb(192, 192, 192), // 7: white
-    rgb(0, 0, 0),       // 8: bright black (== black)
-    rgb(0, 0, 255),     // 9: bright blue
-    rgb(255, 0, 0),     // 10: bright red
-    rgb(255, 0, 255),   // 11: bright magenta
-    rgb(0, 255, 0),     // 12: bright green
-    rgb(0, 255, 255),   // 13: bright cyan
-    rgb(255, 255, 0),   // 14: bright yellow
-    rgb(255, 255, 255), // 15: bright white
-];
+// A second interpretation with the classic normal = 192 / bright = 255
+// levels (the table Fuse and many other emulators use) was removed here:
+// transcribing it from third-party emulator code violates the charter's
+// emu198x-*-only transcription rule (`198x/decisions/shared-media-spec.md`
+// § 4 — the labelled exception covers Emu198x's own tables, nothing else).
+// Re-add it (as e.g. `levels192-v1`) once a primary-library (`reference/`)
+// source documents those levels with provenance.
 
 /// The ZX Spectrum graphics description.
 pub const MACHINE: MachineGraphics = MachineGraphics {
@@ -99,18 +85,11 @@ pub const MACHINE: MachineGraphics = MachineGraphics {
         // framebuffer once the smoke harness lands.
         border: None,
     }],
-    palette: PaletteModel::Fixed(&[
-        NamedPalette {
-            name: "emu198x-v1",
-            source: "Emu198x/crates/common-sinclair-zx-spectrum/src/palette.rs",
-            colours: EMU198X_V1,
-        },
-        NamedPalette {
-            name: "fuse-v1",
-            source: "emulators/zx-spectrum/fuse-emulator-fuse/ui/gtk/gtkdisplay.c",
-            colours: FUSE_V1,
-        },
-    ]),
+    palette: PaletteModel::Fixed(&[NamedPalette {
+        name: "emu198x-v1",
+        source: "Emu198x/crates/common-sinclair-zx-spectrum/src/palette.rs",
+        colours: EMU198X_V1,
+    }]),
     default_interpretation: Some("emu198x-v1"),
     notes: "FLASH (attribute bit 7) exists but is out of converter scope; \
             converted images ship FLASH=0. Source: \

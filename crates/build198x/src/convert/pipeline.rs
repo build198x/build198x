@@ -35,8 +35,10 @@ pub struct Options {
     /// Dither algorithm (default 8×8 Bayer). Error-diffusion modes are
     /// free-palette (planar) targets only.
     pub dither: DitherMode,
-    /// Ordered-dither strength, 0..=64 (default 32). 0 means
-    /// nearest-colour.
+    /// Dither strength, 0..=64 (default 32). **0 is the canonical
+    /// no-dither representation**: it disables dithering entirely —
+    /// ordered modes degrade to nearest-colour and error-diffusion modes
+    /// do not diffuse.
     pub strength: u8,
     /// Matte colour (sRGB) composited under any alpha and used for
     /// letterbox padding. Default black.
@@ -45,9 +47,6 @@ pub struct Options {
     /// background instead of the histogram heuristic (16× the search
     /// cost).
     pub exhaustive_background: bool,
-    /// Disable dithering entirely (equivalent to strength 0 for ordered
-    /// modes; overrides error-diffusion selection).
-    pub no_dither: bool,
 }
 
 impl Options {
@@ -64,7 +63,6 @@ impl Options {
             strength: 32,
             matte: [0, 0, 0],
             exhaustive_background: false,
-            no_dither: false,
         }
     }
 }
@@ -157,12 +155,12 @@ pub fn convert(img: &image::DynamicImage, opts: &Options) -> Result<Conversion, 
             mode: opts.mode.clone(),
         })?;
 
-    // Resolve the dither knobs once: `no_dither` zeroes the ordered
-    // strength, and diffusion is in effect only when an error-diffusion
-    // mode survives `no_dither`.
+    // Resolve the dither knobs once: strength 0 is the canonical
+    // no-dither state, so diffusion is in effect only when an
+    // error-diffusion mode carries a nonzero strength.
     let plan = DitherPlan {
-        strength: if opts.no_dither { 0 } else { opts.strength },
-        diffuse: !opts.no_dither && !opts.dither.is_ordered(),
+        strength: opts.strength,
+        diffuse: opts.strength > 0 && !opts.dither.is_ordered(),
     };
 
     let normalised = normalise::normalise(img, opts.matte)?;
@@ -177,9 +175,9 @@ pub fn convert(img: &image::DynamicImage, opts: &Options) -> Result<Conversion, 
     }
 }
 
-/// The dither knobs resolved once at the top of [`convert`]: the effective
-/// ordered strength (zeroed by `no_dither`) and whether error diffusion is
-/// in effect.
+/// The dither knobs resolved once at the top of [`convert`]: the dither
+/// strength (0 = no dithering at all) and whether error diffusion is in
+/// effect.
 #[derive(Clone, Copy)]
 struct DitherPlan {
     strength: u8,
@@ -803,7 +801,8 @@ impl Conversion {
     /// Bridge to the Amiga ILBM codec input. The palette is emitted as
     /// 8-bit-per-gun triples already scaled from the 4-bit gamut
     /// (`v = level·17`, produced by the quantiser); CAMG carries the HIRES
-    /// bit for hires modes and 0 for lores.
+    /// bit for hires modes and 0 for lores; the BMHD pixel aspect is 10:11
+    /// for lores modes and 5:11 for hires (PAL).
     ///
     /// # Errors
     ///
@@ -827,11 +826,12 @@ impl Conversion {
             .ok_or(ConvertError::Internal {
                 what: "conversion names a machine/mode the spec does not hold",
             })?;
-        let camg = if mode.pixel_aspect == mediaspec::Ratio::new(1, 2) {
-            ilbm::CAMG_HIRES
-        } else {
-            0
-        };
+        let hires = mode.pixel_aspect == mediaspec::Ratio::new(1, 2);
+        let camg = if hires { ilbm::CAMG_HIRES } else { 0 };
+        // BMHD pixel aspect, derived from the same spec fact as CAMG: the
+        // ILBM spec's PAL aspects are 10:11 for lores (1:1 mode pixels)
+        // and 5:11 for hires (1:2 half-width pixels).
+        let (x_aspect, y_aspect) = if hires { (5, 11) } else { (10, 11) };
         Ok(ilbm::Ilbm {
             width: u16::try_from(self.width).unwrap_or(u16::MAX),
             height: u16::try_from(self.height).unwrap_or(u16::MAX),
@@ -839,6 +839,8 @@ impl Conversion {
             palette: self.palette.iter().map(|c| [c.r, c.g, c.b]).collect(),
             pixels: self.pixels.clone(),
             camg,
+            x_aspect,
+            y_aspect,
         })
     }
 

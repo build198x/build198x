@@ -82,6 +82,16 @@ pub enum ConvertError {
         /// The cap that was exceeded.
         max: u32,
     },
+    /// Input pixel count (`width × height`) exceeds
+    /// [`normalise::MAX_PIXELS`]; checked before any pipeline allocation.
+    TooManyPixels {
+        /// Declared width in pixels.
+        width: u32,
+        /// Declared height in pixels.
+        height: u32,
+        /// The total-pixel cap that was exceeded.
+        max_pixels: u64,
+    },
     /// The input has zero width or height.
     EmptyImage,
     /// No machine in the spec carries this id.
@@ -137,6 +147,16 @@ impl core::fmt::Display for ConvertError {
                 write!(
                     f,
                     "input dimensions {width}x{height} exceed the {max} sanity cap"
+                )
+            }
+            Self::TooManyPixels {
+                width,
+                height,
+                max_pixels,
+            } => {
+                write!(
+                    f,
+                    "input dimensions {width}x{height} exceed the {max_pixels} total-pixel cap"
                 )
             }
             Self::EmptyImage => write!(f, "input image has zero width or height"),

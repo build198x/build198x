@@ -4,6 +4,7 @@
 
 use build198x::convert::colour::{Metric, srgb8_to_linear};
 use build198x::convert::constrain::{CellSearcher, PaletteData, choose_background};
+use mediaspec::rgb;
 mod common;
 use common::palette_of;
 
@@ -114,6 +115,72 @@ fn c64_multi_cell_without_the_background_colour_still_renders() {
     free.sort_unstable();
     assert_eq!(free, [3, 4, 5]);
     assert!(score < 1e-12, "expected zero error, got {score}");
+}
+
+// --- determinism-contract tie-breaks (decisions/determinism-contract.md
+// clause 3) -----------------------------------------------------------------
+//
+// Exact float ties are constructible under the WeightedRgb metric, whose
+// projection is linear RGB itself: sRGB 255/0 decode to exactly 1.0/0.0
+// through the const LUT, 0.5 is an exact f32, and the weighted squared
+// distances below evaluate to bitwise-identical values (products and sums
+// of exact dyadic rationals well inside f32 precision).
+
+/// Clause: equal colour distance ⇒ lowest palette index wins
+/// ([`PaletteData::nearest`]'s ascending strict-`<` scan).
+#[test]
+fn nearest_breaks_exact_distance_ties_to_the_lowest_palette_index() {
+    // Probe: the exact red/blue midpoint in linear RGB. Distance to red
+    // (1,0,0) = 3·0.25 + 2·0.25 = 1.25; to blue (0,0,1) the same 1.25.
+    let probe = [0.5f32, 0.0, 0.5];
+
+    let red_blue = PaletteData::new(&[rgb(255, 0, 0), rgb(0, 0, 255)], Metric::WeightedRgb);
+    let d_red = red_blue.metric.distance_sq(probe, red_blue.proj[0]);
+    let d_blue = red_blue.metric.distance_sq(probe, red_blue.proj[1]);
+    assert!(
+        d_red.total_cmp(&d_blue).is_eq(),
+        "the tie must be bitwise exact for this test to pin anything: {d_red} vs {d_blue}"
+    );
+    assert_eq!(red_blue.nearest(probe), 0, "lowest index wins the tie");
+
+    // Reversed palette order: the winner follows the index, not the colour.
+    let blue_red = PaletteData::new(&[rgb(0, 0, 255), rgb(255, 0, 0)], Metric::WeightedRgb);
+    assert_eq!(blue_red.nearest(probe), 0, "still the lowest index");
+}
+
+/// Clause: equal cell-candidate score ⇒ first candidate in enumeration
+/// order wins. Two pair candidates cover the cell with arithmetically
+/// identical (exactly zero) scores: red+blue mixes to the probe at
+/// `t = 4/8 = 0.5` exactly, and magenta+black does the same. The hires
+/// search enumerates unordered pairs in lexicographic `(i, j)` order with
+/// strict `<` selection, so (0, 1) must beat the equal-scoring (2, 3).
+#[test]
+fn equal_score_cell_candidates_break_to_the_first_in_enumeration_order() {
+    let pal = PaletteData::new(
+        &[
+            rgb(255, 0, 0),   // 0: red      — pair A
+            rgb(0, 0, 255),   // 1: blue     — pair A
+            rgb(255, 0, 255), // 2: magenta  — pair B
+            rgb(0, 0, 0),     // 3: black    — pair B
+        ],
+        Metric::WeightedRgb,
+    );
+    let searcher = CellSearcher::new(pal);
+    // A whole 8×8 cell sitting on the shared midpoint of both pairs.
+    let cell = vec![[0.5f32, 0.0, 0.5]; 64];
+
+    let (choice, score) = searcher.c64_hires(&cell);
+    assert!(
+        score.total_cmp(&0.0).is_eq(),
+        "both candidates must cover the cell exactly, got {score}"
+    );
+    let mut pair = [choice.fg, choice.bg];
+    pair.sort_unstable();
+    assert_eq!(
+        pair,
+        [0, 1],
+        "first candidate in enumeration order must win the exact tie"
+    );
 }
 
 #[test]

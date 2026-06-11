@@ -63,6 +63,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use build198x::convert::colour::Metric;
 use build198x::convert::dither::DitherMode;
+use build198x::convert::normalise;
 use build198x::convert::pipeline::{Conversion, Options, convert};
 use build198x::format::{art_studio, ilbm, koala, scr};
 use mediaspec::{ConstraintRule, PaletteModel, Rgb};
@@ -170,7 +171,8 @@ struct ImageArgs {
     palette: Option<String>,
     metric: Metric,
     dither: DitherMode,
-    no_dither: bool,
+    /// Dither strength 0..=64; 0 is the canonical no-dither state
+    /// (`--dither none` sets it, and `--dither-strength 0` means the same).
     strength: u8,
     matte: [u8; 3],
     exhaustive_background: bool,
@@ -360,27 +362,6 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
         }
     };
 
-    let (dither, no_dither) = match dither_arg.as_deref() {
-        None | Some("ordered8") => (DitherMode::Bayer8, false),
-        Some("ordered4") => (DitherMode::Bayer4, false),
-        Some("fs") => (DitherMode::FloydSteinberg, false),
-        Some("atkinson") => (DitherMode::Atkinson, false),
-        Some("none") => (DitherMode::Bayer8, true),
-        Some(other) => {
-            return Err(format!(
-                "unknown dither `{other}` (ordered4, ordered8, fs, atkinson, none)"
-            ));
-        }
-    };
-    // Error diffusion needs a free-palette target: keyed on the resolved
-    // mode's constraint rule, not the format token.
-    if !dither.is_ordered() && !matches!(mode_spec.constraint, ConstraintRule::Planar { .. }) {
-        return Err(format!(
-            "--dither {} needs a free-palette (planar) target; cell-constrained formats take ordered4, ordered8, or none",
-            dither_token(dither, no_dither)
-        ));
-    }
-
     let strength = match strength_arg {
         None => 32,
         Some(s) => s
@@ -389,6 +370,29 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
             .filter(|v| *v <= 64)
             .ok_or_else(|| format!("--dither-strength must be an integer 0..=64, got `{s}`"))?,
     };
+    // `--dither none` is sugar for strength 0 — the pipeline's canonical
+    // no-dither representation (one field, not two).
+    let (dither, strength) = match dither_arg.as_deref() {
+        None | Some("ordered8") => (DitherMode::Bayer8, strength),
+        Some("ordered4") => (DitherMode::Bayer4, strength),
+        Some("fs") => (DitherMode::FloydSteinberg, strength),
+        Some("atkinson") => (DitherMode::Atkinson, strength),
+        Some("none") => (DitherMode::Bayer8, 0),
+        Some(other) => {
+            return Err(format!(
+                "unknown dither `{other}` (ordered4, ordered8, fs, atkinson, none)"
+            ));
+        }
+    };
+    // Error diffusion needs a free-palette target: keyed on the resolved
+    // mode's constraint rule, not the format token. (The raw mode token is
+    // named here even at strength 0, so the message echoes what was typed.)
+    if !dither.is_ordered() && !matches!(mode_spec.constraint, ConstraintRule::Planar { .. }) {
+        return Err(format!(
+            "--dither {} needs a free-palette (planar) target; cell-constrained formats take ordered4, ordered8, or none",
+            dither_mode_token(dither)
+        ));
+    }
 
     let matte = match matte_arg {
         None => [0, 0, 0],
@@ -420,7 +424,6 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
         palette,
         metric,
         dither,
-        no_dither,
         strength,
         matte,
         exhaustive_background,
@@ -440,18 +443,25 @@ fn metric_token(metric: Metric) -> &'static str {
     }
 }
 
-/// The CLI token for a dither selection (the report's `options.dither`
-/// echoes it).
-fn dither_token(dither: DitherMode, no_dither: bool) -> &'static str {
-    if no_dither {
-        return "none";
-    }
+/// The CLI token for a dither algorithm, ignoring strength.
+fn dither_mode_token(dither: DitherMode) -> &'static str {
     match dither {
         DitherMode::Bayer4 => "ordered4",
         DitherMode::Bayer8 => "ordered8",
         DitherMode::FloydSteinberg => "fs",
         DitherMode::Atkinson => "atkinson",
     }
+}
+
+/// The CLI token for a dither selection (the report's `options.dither`
+/// echoes it). Strength 0 is the canonical no-dither state, so it reports
+/// `none` regardless of the algorithm — a user-passed `--dither-strength 0`
+/// legitimately reports `none` too.
+fn dither_token(dither: DitherMode, strength: u8) -> &'static str {
+    if strength == 0 {
+        return "none";
+    }
+    dither_mode_token(dither)
 }
 
 /// Parse `rrggbb` (optional leading `#`) into an RGB triple.
@@ -508,16 +518,38 @@ enum PaletteSection {
 type ResolvedPalette = (Option<String>, Vec<Rgb>);
 
 fn run_image(a: &ImageArgs) -> ExitCode {
+    // Output-collision pre-scan: resolve every input's output path before
+    // any conversion. Two inputs resolving to the same output is a usage
+    // error (exit 2, usage on stderr, no report — consistent with the
+    // other usage errors): last-write-wins would silently lose a result.
+    let natives: Vec<PathBuf> = a
+        .inputs
+        .iter()
+        .map(|input| {
+            a.output
+                .clone()
+                .map_or_else(|| default_output(input, a.format), PathBuf::from)
+        })
+        .collect();
+    for (i, native) in natives.iter().enumerate() {
+        if let Some(j) = natives[..i].iter().position(|n| n == native) {
+            eprintln!(
+                "build198x image: inputs `{}` and `{}` both resolve to output {}\n\n{}",
+                a.inputs[j],
+                a.inputs[i],
+                native.display(),
+                image_usage()
+            );
+            return ExitCode::from(2);
+        }
+    }
+
     let mut entries: Vec<FileEntry> = Vec::with_capacity(a.inputs.len());
     let mut first_palette: Option<ResolvedPalette> = None;
 
-    for input in &a.inputs {
-        let native = a
-            .output
-            .clone()
-            .map_or_else(|| default_output(input, a.format), PathBuf::from);
+    for (input, native) in a.inputs.iter().zip(&natives) {
         let preview = a.preview.clone().map(PathBuf::from);
-        let (entry, palette) = process_file(input, &native, preview.as_deref(), a);
+        let (entry, palette) = process_file(input, native, preview.as_deref(), a);
         if first_palette.is_none() {
             first_palette = palette;
         }
@@ -615,6 +647,30 @@ fn process_file(
             return (entry, None);
         }
     };
+    // Pixel-count cap, probed from the container header BEFORE the full
+    // decode: the per-axis cap alone does not bound the total, and a small
+    // file declaring enormous dimensions would make the decoder allocate
+    // for them (multi-GB RSS from a few-hundred-KB PNG).
+    match image::ImageReader::new(std::io::Cursor::new(&bytes[..]))
+        .with_guessed_format()
+        .ok()
+        .and_then(|reader| reader.into_dimensions().ok())
+    {
+        Some((w, h)) if u64::from(w) * u64::from(h) > normalise::MAX_PIXELS => {
+            entry.error = Some((
+                "decode",
+                format!(
+                    "cannot decode {input}: {w}x{h} is {} pixels, above the {} pixel cap",
+                    u64::from(w) * u64::from(h),
+                    normalise::MAX_PIXELS
+                ),
+            ));
+            return (entry, None);
+        }
+        // Probe failures fall through to the decoder, which reports its
+        // own (more specific) decode error.
+        _ => {}
+    }
     let img = match image::load_from_memory(&bytes) {
         Ok(i) => i,
         Err(e) => {
@@ -622,6 +678,18 @@ fn process_file(
             return (entry, None);
         }
     };
+    // PNG is the only input format under the byte-identical determinism
+    // contract (decisions/determinism-contract.md clause 1); flag anything
+    // else as best-effort.
+    if image::guess_format(&bytes)
+        .map(|f| f != image::ImageFormat::Png)
+        .unwrap_or(true)
+    {
+        entry.warnings.push(
+            "non-PNG input: byte-identical output is not guaranteed (determinism contract covers PNG)"
+                .to_owned(),
+        );
+    }
     if gif_is_animated(&bytes) {
         entry
             .warnings
@@ -637,7 +705,6 @@ fn process_file(
         strength: a.strength,
         matte: a.matte,
         exhaustive_background: a.exhaustive_background,
-        no_dither: a.no_dither,
     };
     let conv = match convert(&img, &opts) {
         Ok(c) => c,
@@ -922,7 +989,7 @@ fn render_report(a: &ImageArgs, palette: &PaletteSection, entries: &[FileEntry])
     ));
     s.push_str(&format!(
         "    \"dither\": \"{}\",\n",
-        dither_token(a.dither, a.no_dither)
+        dither_token(a.dither, a.strength)
     ));
     s.push_str(&format!("    \"strength\": {},\n", a.strength));
     s.push_str(&format!(
@@ -933,7 +1000,11 @@ fn render_report(a: &ImageArgs, palette: &PaletteSection, entries: &[FileEntry])
             b: a.matte[2]
         })
     ));
-    s.push_str(&format!("    \"force\": {}\n", a.force));
+    s.push_str(&format!("    \"force\": {},\n", a.force));
+    s.push_str(&format!(
+        "    \"exhaustive_background\": {}\n",
+        a.exhaustive_background
+    ));
     s.push_str("  },\n");
 
     s.push_str("  \"files\": [\n");
@@ -1024,7 +1095,8 @@ fn image_usage() -> &'static str {
      \x20 --metric <m>               oklab | weighted-rgb | yuv (default oklab)\n\
      \x20 --dither <d>               ordered4 | ordered8 | fs | atkinson | none\n\
      \x20                            (default ordered8; fs/atkinson are ilbm-only)\n\
-     \x20 --dither-strength <0..64>  ordered-dither strength (default 32)\n\
+     \x20 --dither-strength <0..64>  dither strength (default 32; 0 disables dithering\n\
+     \x20                            and reports as `none`)\n\
      \x20 --matte <rrggbb>           matte under alpha + letterbox colour (default 000000)\n\
      \x20 --exhaustive-background    koala only: try every background colour (16x cost)\n\
      \x20 -o, --output <path>        output path (single input only;\n\

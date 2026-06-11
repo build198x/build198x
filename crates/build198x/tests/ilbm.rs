@@ -29,6 +29,10 @@ fn patterned_ilbm() -> Ilbm {
         ],
         pixels,
         camg: 0,
+        // The lores PAL aspect the encoder hardcoded before the fields
+        // existed — keeps the frozen golden bytes valid.
+        x_aspect: 10,
+        y_aspect: 11,
     }
 }
 
@@ -76,6 +80,21 @@ fn round_trip_preserves_camg_mode_bits() {
     assert_eq!(decoded.camg, ilbm::CAMG_HIRES | ilbm::CAMG_LACE);
 }
 
+/// BMHD `xAspect`/`yAspect` are written by encode and populated by decode
+/// — non-default values survive the trip and land at BMHD bytes 14/15.
+#[test]
+fn round_trip_preserves_bmhd_pixel_aspect() {
+    let mut image = patterned_ilbm();
+    image.x_aspect = 5; // hires PAL
+    image.y_aspect = 11;
+    let bytes = ilbm::encode(&image, Compression::ByteRun1).expect("encode");
+    let (bmhd, _) = find_chunk(&bytes, b"BMHD").expect("BMHD present");
+    assert_eq!((bytes[bmhd + 14], bytes[bmhd + 15]), (5, 11));
+    let decoded = ilbm::decode(&bytes).expect("decode");
+    assert_eq!((decoded.x_aspect, decoded.y_aspect), (5, 11));
+    assert_eq!(decoded, image);
+}
+
 /// Plane scanlines pad to a word boundary: 17 px -> 3 bytes -> 4; 9 px ->
 /// 2 bytes -> 2; 8 px -> 1 byte -> 2.
 #[test]
@@ -116,6 +135,8 @@ fn byte_run1_actually_compresses_runs() {
         palette: vec![[0, 0, 0], [0xFF, 0xFF, 0xFF]],
         pixels: vec![1; 320 * 16],
         camg: 0,
+        x_aspect: 10,
+        y_aspect: 11,
     };
     let raw = ilbm::encode(&image, Compression::None).expect("encode raw");
     let packed = ilbm::encode(&image, Compression::ByteRun1).expect("encode packed");

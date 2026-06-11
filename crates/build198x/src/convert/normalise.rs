@@ -21,12 +21,20 @@
 
 use super::{ConvertError, Rgb8Image};
 
-/// Sanity cap on input width and height, in pixels. Checked **before** any
-/// allocation this module performs, so a hostile header can't drive an
-/// outsized buffer.
+/// Sanity cap on input width and height, in pixels — a per-axis bound on
+/// degenerate geometry. It does **not** bound the total pixel count
+/// (16384² is 268 megapixels); [`MAX_PIXELS`] does that. Both are checked
+/// before any allocation this module performs.
 pub const MAX_DIMENSION: u32 = 16384;
 
-/// Normalise a decoded image: dimension sanity check, expand/narrow to
+/// Sanity cap on the total pixel count (`width × height`). 64 megapixels
+/// is generous for any plausible source photo while bounding the working
+/// buffers this pipeline allocates. The CLI also enforces this cap from
+/// the container header **before** the full decode; the check here is the
+/// defensive backstop for library callers.
+pub const MAX_PIXELS: u64 = 64_000_000;
+
+/// Normalise a decoded image: dimension sanity checks, expand/narrow to
 /// 8-bit RGBA, composite alpha over `matte` (sRGB, integer round-half-up).
 ///
 /// # Errors
@@ -34,6 +42,8 @@ pub const MAX_DIMENSION: u32 = 16384;
 /// - [`ConvertError::EmptyImage`] when either dimension is zero.
 /// - [`ConvertError::DimensionsTooLarge`] when either dimension exceeds
 ///   [`MAX_DIMENSION`] — returned before this module allocates anything.
+/// - [`ConvertError::TooManyPixels`] when `width × height` exceeds
+///   [`MAX_PIXELS`] — likewise returned before any allocation here.
 pub fn normalise(img: &image::DynamicImage, matte: [u8; 3]) -> Result<Rgb8Image, ConvertError> {
     let (width, height) = (img.width(), img.height());
     if width == 0 || height == 0 {
@@ -44,6 +54,13 @@ pub fn normalise(img: &image::DynamicImage, matte: [u8; 3]) -> Result<Rgb8Image,
             width,
             height,
             max: MAX_DIMENSION,
+        });
+    }
+    if u64::from(width) * u64::from(height) > MAX_PIXELS {
+        return Err(ConvertError::TooManyPixels {
+            width,
+            height,
+            max_pixels: MAX_PIXELS,
         });
     }
 

@@ -38,7 +38,7 @@ fn identity_spectrum_image_passes_through_unchanged() {
     let img = image_of_indices(pal, 256, 192, index_at);
 
     let mut opts = Options::new("sinclair-zx-spectrum", "standard");
-    opts.no_dither = true;
+    opts.strength = 0;
     let conv = convert(&img, &opts).expect("conversion succeeds");
 
     assert!(conv.report.already_constrained, "pre-pass must detect it");
@@ -195,7 +195,7 @@ fn scr_bridge_packs_attributes_and_round_trips() {
         }
     });
     let mut opts = Options::new("sinclair-zx-spectrum", "standard");
-    opts.no_dither = true;
+    opts.strength = 0;
     let conv = convert(&img, &opts).expect("conversion succeeds");
 
     let screen = conv.to_scr().expect("bridge succeeds");
@@ -232,7 +232,7 @@ fn art_studio_bridge_agrees_with_indexed_pixels() {
         if (x / 2 + y / 2) % 2 == 0 { a } else { 0 }
     });
     let mut opts = Options::new("commodore-c64", "hires-bitmap");
-    opts.no_dither = true;
+    opts.strength = 0;
     let conv = convert(&img, &opts).expect("conversion succeeds");
     assert!(conv.report.already_constrained);
 
@@ -265,7 +265,7 @@ fn koala_bridge_agrees_with_indexed_pixels_and_background() {
         }
     });
     let mut opts = Options::new("commodore-c64", "multicolour-bitmap");
-    opts.no_dither = true;
+    opts.strength = 0;
     let conv = convert(&img, &opts).expect("conversion succeeds");
 
     assert_eq!(conv.background, Some(6), "blue dominates the histogram");
@@ -301,7 +301,7 @@ fn exhaustive_background_is_deterministic_and_tie_breaks_low() {
         }
     });
     let mut heuristic = Options::new("commodore-c64", "multicolour-bitmap");
-    heuristic.no_dither = true;
+    heuristic.strength = 0;
     let mut exhaustive = heuristic.clone();
     exhaustive.exhaustive_background = true;
 

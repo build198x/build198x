@@ -32,7 +32,9 @@
 //!   compression:u8 pad1:u8 transparentColor:u16 xAspect:u8 yAspect:u8
 //!   pageWidth:i16 pageHeight:i16`, all big-endian. This encoder writes
 //!   `x = y = 0`, `masking = 0`, `pad1 = 0`, `transparentColor = 0`,
-//!   `xAspect:yAspect = 10:11` (the spec's lores PAL pixel aspect), and
+//!   `xAspect:yAspect` from the struct's [`Ilbm::x_aspect`] /
+//!   [`Ilbm::y_aspect`] fields (the pipeline bridge sets 10:11 for lores
+//!   modes and 5:11 for hires — the spec's PAL pixel aspects), and
 //!   `pageWidth/pageHeight` equal to the image size.
 //! - **BODY**: rows top to bottom; within each row, one scanline per plane
 //!   (plane 0 first); each plane scanline is `ceil(width / 8)` bytes
@@ -96,6 +98,12 @@ pub struct Ilbm {
     /// The CAMG viewmode longword; 0 for lores non-laced (and for files
     /// without a CAMG chunk). Carried verbatim, not interpreted.
     pub camg: u32,
+    /// BMHD `xAspect`: the pixel-aspect numerator. Carried verbatim;
+    /// the pipeline bridge writes 10 (lores) or 5 (hires).
+    pub x_aspect: u8,
+    /// BMHD `yAspect`: the pixel-aspect denominator. Carried verbatim;
+    /// the pipeline bridge writes 11 (PAL).
+    pub y_aspect: u8,
 }
 
 /// Bytes per plane scanline: `ceil(width / 8)` rounded up to a word
@@ -205,8 +213,8 @@ pub fn decode(bytes: &[u8]) -> Result<Ilbm, DecodeError> {
     let mut camg = 0u32;
     // The decoded BODY with the BMHD geometry it was decoded against
     // (`header` may in principle be replaced by a later BMHD chunk):
-    // (width, height, n_planes, pixels).
-    let mut body: Option<(u16, u16, u8, Vec<u8>)> = None;
+    // (width, height, n_planes, x_aspect, y_aspect, pixels).
+    let mut body: Option<(u16, u16, u8, u8, u8, Vec<u8>)> = None;
 
     while pos + 8 <= form_end {
         let id = &bytes[pos..pos + 4];
@@ -254,6 +262,8 @@ pub fn decode(bytes: &[u8]) -> Result<Ilbm, DecodeError> {
                     bmhd.width,
                     bmhd.height,
                     bmhd.n_planes,
+                    bmhd.x_aspect,
+                    bmhd.y_aspect,
                     decode_body(bmhd, data)?,
                 ));
             }
@@ -263,7 +273,8 @@ pub fn decode(bytes: &[u8]) -> Result<Ilbm, DecodeError> {
         pos = data_end + (size & 1); // Even-length chunk padding.
     }
 
-    let (width, height, n_planes, pixels) = body.ok_or(DecodeError::MissingChunk { id: "BODY" })?;
+    let (width, height, n_planes, x_aspect, y_aspect, pixels) =
+        body.ok_or(DecodeError::MissingChunk { id: "BODY" })?;
     Ok(Ilbm {
         width,
         height,
@@ -271,6 +282,8 @@ pub fn decode(bytes: &[u8]) -> Result<Ilbm, DecodeError> {
         palette,
         pixels,
         camg,
+        x_aspect,
+        y_aspect,
     })
 }
 
@@ -281,6 +294,8 @@ struct Bmhd {
     n_planes: u8,
     masking: u8,
     compression: u8,
+    x_aspect: u8,
+    y_aspect: u8,
 }
 
 fn parse_bmhd(data: &[u8]) -> Result<Bmhd, DecodeError> {
@@ -294,6 +309,8 @@ fn parse_bmhd(data: &[u8]) -> Result<Bmhd, DecodeError> {
     let n_planes = data[8];
     let masking = data[9];
     let compression = data[10];
+    let x_aspect = data[14];
+    let y_aspect = data[15];
 
     if width == 0 {
         return Err(DecodeError::Unsupported {
@@ -334,6 +351,8 @@ fn parse_bmhd(data: &[u8]) -> Result<Bmhd, DecodeError> {
         n_planes,
         masking,
         compression,
+        x_aspect,
+        y_aspect,
     })
 }
 
@@ -484,8 +503,8 @@ fn bmhd_payload(image: &Ilbm, compression: Compression) -> [u8; BMHD_LEN] {
         Compression::ByteRun1 => 1,
     };
     // pad1 = 0, transparentColor = 0 (bytes 11..14 already zero).
-    p[14] = 10; // xAspect: lores PAL 10:11
-    p[15] = 11; // yAspect
+    p[14] = image.x_aspect;
+    p[15] = image.y_aspect;
     p[16..18].copy_from_slice(&image.width.to_be_bytes()); // pageWidth
     p[18..20].copy_from_slice(&image.height.to_be_bytes()); // pageHeight
     p

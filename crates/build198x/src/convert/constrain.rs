@@ -398,22 +398,26 @@ impl CellSearcher {
             .collect();
 
         // Cache per-pixel mixing-aware error for every pair among
-        // {background} ∪ candidates (positions: 0 = background).
+        // {background} ∪ candidates (positions: 0 = background). One flat
+        // buffer strided by pixels-per-cell — pair `tri_index(m, p, q)`
+        // owns the slice at `index * pixels_per_cell` — written in the
+        // same pair-then-pixel order the nested-Vec form used, so the
+        // values and their iteration order are identical.
         let involved: Vec<u8> = std::iter::once(background)
             .chain(cands.iter().copied())
             .collect();
         let m = involved.len();
-        let mut cache: Vec<Vec<f32>> = Vec::with_capacity(m * (m + 1) / 2);
+        let pixels_per_cell = projs.len();
+        let mut cache: Vec<f32> = Vec::with_capacity(m * (m + 1) / 2 * pixels_per_cell);
         for p in 0..m {
             for q in p..m {
                 let a = involved[p].min(involved[q]);
                 let b = involved[p].max(involved[q]);
                 let row = self.mix_row(a, b);
-                cache.push(
+                cache.extend(
                     projs
                         .iter()
-                        .map(|&px| min_dist_sq(self.pal.metric, px, row))
-                        .collect(),
+                        .map(|&px| min_dist_sq(self.pal.metric, px, row)),
                 );
             }
         }
@@ -432,13 +436,14 @@ impl CellSearcher {
                     let mut slot = 0;
                     for (pi, &p) in positions.iter().enumerate() {
                         for &q in &positions[pi..] {
-                            pair_rows[slot] = &cache[tri_index(m, p, q)];
+                            let start = tri_index(m, p, q) * pixels_per_cell;
+                            pair_rows[slot] = &cache[start..start + pixels_per_cell];
                             slot += 1;
                         }
                     }
                     let mut sum = 0.0f32;
                     let mut aborted = false;
-                    for px in 0..projs.len() {
+                    for px in 0..pixels_per_cell {
                         let mut best_px = f32::INFINITY;
                         for row in &pair_rows {
                             let d = row[px];
@@ -472,8 +477,8 @@ impl CellSearcher {
             }
             // Score the padded set honestly: it degenerates to {bg} ∪ cands,
             // i.e. the per-pixel minimum over every cached pair row.
-            let mut per_pixel = vec![f32::INFINITY; projs.len()];
-            for row in &cache {
+            let mut per_pixel = vec![f32::INFINITY; pixels_per_cell];
+            for row in cache.chunks(pixels_per_cell) {
                 for (slot, &d) in per_pixel.iter_mut().zip(row) {
                     if d < *slot {
                         *slot = d;

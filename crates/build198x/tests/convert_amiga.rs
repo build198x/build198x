@@ -109,6 +109,11 @@ fn planar_pipeline_is_deterministic_and_bridges_to_ilbm() {
     assert_eq!(ilbm.width, 320);
     assert_eq!(ilbm.height, 200);
     assert_eq!(ilbm.camg, 0, "lores carries no HIRES bit");
+    assert_eq!(
+        (ilbm.x_aspect, ilbm.y_aspect),
+        (10, 11),
+        "lores BMHD aspect is 10:11"
+    );
     let bytes =
         build198x::format::ilbm::encode(&ilbm, build198x::format::ilbm::Compression::ByteRun1)
             .expect("encode");
@@ -120,12 +125,17 @@ fn planar_pipeline_is_deterministic_and_bridges_to_ilbm() {
 fn hires_mode_sets_the_camg_hires_bit() {
     let img = DynamicImage::ImageRgb8(RgbImage::from_pixel(64, 64, image::Rgb([136, 17, 34])));
     let mut opts = Options::new("commodore-amiga-ocs", "hires-ntsc");
-    opts.no_dither = true;
+    opts.strength = 0;
     let conv = convert(&img, &opts).expect("conversion succeeds");
     let ilbm = conv.to_ilbm().expect("bridge succeeds");
     assert_eq!(
         ilbm.camg & build198x::format::ilbm::CAMG_HIRES,
         build198x::format::ilbm::CAMG_HIRES
+    );
+    assert_eq!(
+        (ilbm.x_aspect, ilbm.y_aspect),
+        (5, 11),
+        "hires BMHD aspect is 5:11"
     );
     let n_planes = conv.n_planes.expect("planes");
     assert!(n_planes <= 4, "hires OCS caps at 4 planes");

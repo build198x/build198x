@@ -289,6 +289,12 @@ fn ae2_animated_gif_converts_first_frame_with_warning() {
         stdout.contains("animated input: first frame used"),
         "warning present in report: {stdout}"
     );
+    // A GIF input carries the determinism warning too: only PNG is under
+    // the byte-identical contract (decisions/determinism-contract.md).
+    assert!(
+        stdout.contains("non-PNG input: byte-identical output is not guaranteed"),
+        "non-PNG determinism warning present alongside the animated one: {stdout}"
+    );
     assert!(td.path().join("anim.scr").exists(), "output written");
 }
 
@@ -365,6 +371,42 @@ fn ae4_same_input_and_flags_twice_yield_identical_outputs() {
     assert_eq!(prev1.to_rgb8().into_raw(), prev2.to_rgb8().into_raw());
 }
 
+// --- batch output-collision pre-scan ----------------------------------------
+
+#[test]
+fn batch_output_collision_is_a_usage_error_with_nothing_written() {
+    let td = TempDir::new("collision");
+    // Same stem in different directories: both default outputs resolve to
+    // `same.scr` in the cwd.
+    std::fs::create_dir_all(td.path().join("a")).expect("create dir a");
+    std::fs::create_dir_all(td.path().join("b")).expect("create dir b");
+    write_gradient_png(&td.path().join("a/same.png"), 64, 64);
+    write_gradient_png(&td.path().join("b/same.png"), 64, 64);
+
+    let (code, stdout, stderr) = run_in(
+        td.path(),
+        &[
+            "image",
+            "a/same.png",
+            "b/same.png",
+            "--machine",
+            "sinclair-zx-spectrum",
+            "--format",
+            "scr",
+        ],
+    );
+    assert_eq!(code, 2, "output collision is a usage error: {stderr}");
+    assert!(stdout.is_empty(), "usage errors emit no report: {stdout}");
+    assert!(
+        stderr.contains("a/same.png") && stderr.contains("b/same.png"),
+        "both colliding inputs named on stderr: {stderr}"
+    );
+    assert!(
+        !td.path().join("same.scr").exists(),
+        "nothing written before the pre-scan rejects"
+    );
+}
+
 // --- usage and decode failures ------------------------------------------------
 
 #[test]
@@ -417,6 +459,38 @@ fn version_and_help_report_on_stdout() {
     for needle in ["exit codes", "--machine", "--format", "--force", "--report"] {
         assert!(stdout.contains(needle), "help mentions {needle}: {stdout}");
     }
+}
+
+#[test]
+fn over_pixel_cap_input_is_rejected_from_the_header_before_decode() {
+    let td = TempDir::new("pixelcap");
+    // 8100×8100 = 65.61 megapixels: over the 64 MP total-pixel cap while
+    // under the 16384 per-axis cap. An all-zero grayscale buffer encodes
+    // to a tiny PNG (the 3.4 GB-RSS reproduction shape); the binary under
+    // test must reject it from the IHDR probe before the decoder allocates.
+    let img = image::GrayImage::new(8100, 8100);
+    img.save(td.path().join("huge.png"))
+        .expect("write huge png");
+
+    let (code, stdout, _) = run_in(
+        td.path(),
+        &[
+            "image",
+            "huge.png",
+            "--machine",
+            "sinclair-zx-spectrum",
+            "--format",
+            "scr",
+        ],
+    );
+    assert_eq!(code, 3, "pixel-cap rejection is a decode failure: {stdout}");
+    assert_valid_json(&stdout);
+    assert!(stdout.contains("\"kind\": \"decode\""), "{stdout}");
+    assert!(
+        stdout.contains("pixel cap"),
+        "error names the cap: {stdout}"
+    );
+    assert!(!td.path().join("huge.scr").exists(), "nothing written");
 }
 
 #[test]
@@ -731,4 +805,118 @@ fn ilbm_rejects_palette_flag_and_accepts_explicit_mode() {
     // proportions: each row duplicated vertically → 640×512.
     let preview = image::open(td.path().join("prev.png")).expect("preview is a valid png");
     assert_eq!((preview.width(), preview.height()), (640, 512));
+}
+
+// --- preview content: exact interpretation sRGB + PAR duplication ------------
+
+#[test]
+fn koala_preview_carries_exact_palette_srgb_duplicated_2x_horizontally() {
+    let td = TempDir::new("preview-koala-content");
+    // emu198x-v1 C64 entries 6 (blue) and 7 (yellow), drawn as 2-px-wide
+    // vertical stripes: each stripe is exactly one double-wide (2:1 PAR)
+    // mode pixel, alternating per mode pixel. The input sits exactly on
+    // the palette, so `--dither none` converts it losslessly and every
+    // preview value is fully predictable.
+    const BLUE: [u8; 3] = [0x40, 0x31, 0x8D];
+    const YELLOW: [u8; 3] = [0xBF, 0xCE, 0x72];
+    let img = RgbImage::from_fn(320, 200, |x, _| {
+        if (x / 2) % 2 == 0 {
+            Rgb(BLUE)
+        } else {
+            Rgb(YELLOW)
+        }
+    });
+    img.save(td.path().join("stripes.png"))
+        .expect("write stripes png");
+
+    let (code, stdout, _) = run_in(
+        td.path(),
+        &[
+            "image",
+            "stripes.png",
+            "--machine",
+            "commodore-c64",
+            "--format",
+            "koala",
+            "--dither",
+            "none",
+            "--preview",
+            "prev.png",
+        ],
+    );
+    assert_eq!(code, 0, "{stdout}");
+    let preview = image::open(td.path().join("prev.png"))
+        .expect("preview decodes")
+        .to_rgb8();
+    assert_eq!((preview.width(), preview.height()), (320, 200));
+    // Mode pixel m renders at preview columns 2m and 2m+1 (each logical
+    // pixel appears exactly twice horizontally), carrying the named
+    // interpretation's exact sRGB values.
+    for y in [0u32, 99, 199] {
+        for x in 0..320u32 {
+            let expected = if (x / 2) % 2 == 0 { BLUE } else { YELLOW };
+            assert_eq!(
+                preview.get_pixel(x, y).0,
+                expected,
+                "preview pixel ({x}, {y})"
+            );
+        }
+    }
+}
+
+#[test]
+fn ilbm_hires_preview_carries_exact_srgb_duplicated_2x_vertically() {
+    let td = TempDir::new("preview-ilbm-content");
+    // Two colours on the 4-bit gamut grid (every channel a multiple of
+    // 17), drawn as 2-px-tall horizontal stripes: each stripe is exactly
+    // one half-width (1:2 PAR) hires mode row, alternating per mode row.
+    // On-grid colours quantise losslessly, so with `--dither none` every
+    // preview value is fully predictable.
+    const DARK: [u8; 3] = [0x22, 0x44, 0x66];
+    const PINK: [u8; 3] = [0xFF, 0x00, 0x88];
+    let img = RgbImage::from_fn(640, 512, |_, y| {
+        if (y / 2) % 2 == 0 {
+            Rgb(DARK)
+        } else {
+            Rgb(PINK)
+        }
+    });
+    img.save(td.path().join("stripes.png"))
+        .expect("write stripes png");
+
+    let (code, stdout, _) = run_in(
+        td.path(),
+        &[
+            "image",
+            "stripes.png",
+            "--machine",
+            "commodore-amiga-ocs",
+            "--format",
+            "ilbm",
+            "--mode",
+            "hires-pal",
+            "--dither",
+            "none",
+            "--preview",
+            "prev.png",
+        ],
+    );
+    assert_eq!(code, 0, "{stdout}");
+    let preview = image::open(td.path().join("prev.png"))
+        .expect("preview decodes")
+        .to_rgb8();
+    assert_eq!((preview.width(), preview.height()), (640, 512));
+    // Mode row m renders at preview rows 2m and 2m+1 (each logical row
+    // appears exactly twice vertically) with the generated palette's exact
+    // gamut values — which equal the source colours here.
+    for x in [0u32, 320, 639] {
+        for y in 0..512u32 {
+            let expected = if (y / 2) % 2 == 0 { DARK } else { PINK };
+            assert_eq!(
+                preview.get_pixel(x, y).0,
+                expected,
+                "preview pixel ({x}, {y})"
+            );
+        }
+    }
 }
