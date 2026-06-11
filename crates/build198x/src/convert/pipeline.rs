@@ -278,9 +278,11 @@ fn convert_cells(
             })?;
             (outcome, Some(bg))
         }
-        ConstraintRule::Planar { .. } => {
+        // ConstraintRule is non_exhaustive: anything that isn't a known
+        // cell rule (Planar today) cannot take the cell path.
+        _ => {
             return Err(ConvertError::Internal {
-                what: "planar rule reached the cell path",
+                what: "non-cell constraint rule reached the cell path",
             });
         }
     };
@@ -575,7 +577,9 @@ fn cell_input_already_constrained(
                         four_distinct_sets.push(distinct);
                     }
                 }
-                ConstraintRule::Planar { .. } => return false,
+                // Planar (and any future non_exhaustive rule) is not a
+                // cell rule, so the cell pre-pass never matches it.
+                _ => return false,
             }
         }
     }

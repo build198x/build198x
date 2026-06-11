@@ -33,6 +33,29 @@
 //!   check happens before any conversion work.
 //! - Animated GIFs convert their **first frame** (the `image` crate's
 //!   default frame for non-animated decode) with a warning in the report.
+//!
+//! # JSON report schema
+//!
+//! Top-level keys are **always present**, in fixed order:
+//! `converter_version`, `mediaspec_version`, `machine`, `mode`, `format`,
+//! `palette`, `options`, `files`, `summary`.
+//!
+//! - `palette` reflects the **first successful conversion**: named palettes
+//!   echo its interpretation name and colours (falling back to the spec's
+//!   pinned default when every input failed); generated (gamut) palettes
+//!   echo the first successful conversion's colours, empty when none
+//!   succeeded.
+//!
+//! Per entry in `files`:
+//!
+//! - **Always present**: `input`, `status` (`"ok"`/`"error"`), `outputs`
+//!   (paths actually written, possibly empty), `warnings` (always present
+//!   but may be empty).
+//! - **Conditional**: `error` (`kind` + `message`) appears only on failure
+//!   — absent on success; `quality` (`mean_error`,
+//!   `cells_over_threshold`) appears only once conversion ran — absent
+//!   when the entry failed before the pipeline stage (no-clobber check,
+//!   read, or decode).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -307,23 +330,22 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
     })?;
 
     if let Some(name) = &palette {
-        match spec.palette {
-            PaletteModel::Gamut { .. } => {
+        // PaletteModel is non_exhaustive; only Fixed palettes have named
+        // interpretations, so anything else (Gamut today) rejects --palette.
+        if let PaletteModel::Fixed(list) = spec.palette {
+            if !list.iter().any(|p| p.name == name) {
+                let names: Vec<&str> = list.iter().map(|p| p.name).collect();
                 return Err(format!(
-                    "--palette is not available for `{}`: its palette is a generated gamut, not a named interpretation",
-                    spec.id
+                    "unknown palette interpretation `{name}` for {} ({})",
+                    spec.id,
+                    names.join(", ")
                 ));
             }
-            PaletteModel::Fixed(list) => {
-                if !list.iter().any(|p| p.name == name) {
-                    let names: Vec<&str> = list.iter().map(|p| p.name).collect();
-                    return Err(format!(
-                        "unknown palette interpretation `{name}` for {} ({})",
-                        spec.id,
-                        names.join(", ")
-                    ));
-                }
-            }
+        } else {
+            return Err(format!(
+                "--palette is not available for `{}`: its palette is a generated gamut, not a named interpretation",
+                spec.id
+            ));
         }
     }
 
@@ -762,6 +784,9 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     if let Err(e) = std::fs::write(&tmp, bytes) {
+        // The temp file may exist part-written (create succeeded, write
+        // failed); remove it so a failed run leaves nothing behind.
+        let _ = std::fs::remove_file(&tmp);
         return Err(format!("cannot write {}: {e}", path.display()));
     }
     if let Err(e) = std::fs::rename(&tmp, path) {
@@ -783,7 +808,9 @@ fn palette_section(a: &ImageArgs, conv: Option<ResolvedPalette>) -> PaletteSecti
             gamut_bits: *bits_per_gun,
             colours: conv.map(|(_, colours)| colours).unwrap_or_default(),
         },
-        Some(PaletteModel::Fixed(_)) | None => {
+        // Fixed palettes (and unknown machines) take the named path;
+        // PaletteModel is non_exhaustive, so this arm is the catch-all.
+        _ => {
             if let Some((Some(name), colours)) = conv {
                 return PaletteSection::Named { name, colours };
             }
@@ -843,7 +870,13 @@ fn hex_colour(c: Rgb) -> String {
 
 /// Render the full JSON report. Key order is fixed and golden-tested:
 /// `converter_version`, `mediaspec_version`, `machine`, `mode`, `format`,
-/// `palette`, `options`, `files`, `summary`.
+/// `palette`, `options`, `files`, `summary` — all always present.
+///
+/// Conditional keys (see the module docs § JSON report schema): per file,
+/// `error` appears only on failure and `quality` only once conversion ran;
+/// `warnings` is always present but may be empty. The top-level `palette`
+/// reflects the first successful conversion (spec-default fallback for
+/// named palettes, empty colours for generated ones).
 fn render_report(a: &ImageArgs, palette: &PaletteSection, entries: &[FileEntry]) -> String {
     let mut s = String::with_capacity(2048);
     s.push_str("{\n");
@@ -1006,6 +1039,8 @@ fn image_usage() -> &'static str {
      an existing file without --force. Animated GIFs convert their first\n\
      frame (the image crate's default) with a warning in the report. Batch\n\
      runs continue past per-file errors and report per-file status.\n\
+     The JSON report's schema (always-present vs conditional keys) is\n\
+     documented in the CLI module docs (crates/build198x/src/main.rs).\n\
      \n\
      exit codes:\n\
      \x20 0  success\n\

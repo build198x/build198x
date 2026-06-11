@@ -46,6 +46,11 @@ pub const ATTRIBUTE_ROWS: usize = 24;
 /// File offset of the bitmap byte for pixel row `y` (0..192), byte column
 /// `column` (0..32) — the Smith Figure 15-5 interleave with the $4000 base
 /// removed. Returns `None` when either coordinate is out of range.
+///
+/// Deliberately public beyond this crate's own needs: this module mirrors
+/// the standalone codec crate it would become for the anticipated Play198x
+/// consumer (`decisions/module-and-crate-naming.md`), and random-access
+/// offset lookup is part of that codec surface.
 #[must_use]
 pub fn bitmap_file_offset(y: usize, column: usize) -> Option<usize> {
     if y >= HEIGHT || column >= COLUMNS {
@@ -63,6 +68,11 @@ fn interleave_offset(y: usize, column: usize) -> usize {
 /// File offset of the attribute byte for cell row `row` (0..24), cell column
 /// `column` (0..32). The attribute table is linear at offset $1800
 /// (synthesis § 6). Returns `None` when either coordinate is out of range.
+///
+/// Deliberately public beyond this crate's own needs: this module mirrors
+/// the standalone codec crate it would become for the anticipated Play198x
+/// consumer (`decisions/module-and-crate-naming.md`), and random-access
+/// offset lookup is part of that codec surface.
 #[must_use]
 pub fn attribute_file_offset(row: usize, column: usize) -> Option<usize> {
     if row >= ATTRIBUTE_ROWS || column >= COLUMNS {

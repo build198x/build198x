@@ -129,9 +129,13 @@ jobs:
             target/llvm-cov/lcov.info
             target/llvm-cov/html
 
-  # Cross-platform smoke compile. Proves the workspace builds on macOS
-  # (primary dev host) and Windows without paying for a full test run
-  # there. Build tools pull no platform-specific deps, so no extra install.
+  # Cross-platform build + test. The determinism contract
+  # (decisions/determinism-contract.md) promises byte-identical output on
+  # every platform, so the golden tests must actually run on macOS
+  # (primary dev host) and Windows — a compile-only smoke would let a
+  # platform-specific byte drift through. The suite is fast (<10s), so the
+  # full run costs little over the old check. Build tools pull no
+  # platform-specific deps, so no extra install.
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -163,3 +167,9 @@ jobs:
 
       - name: Check workspace
         run: cargo check --workspace --all-targets
+
+      - name: Test workspace
+        # Cross-platform golden enforcement per the determinism contract:
+        # the fixture-comparison tests must pass on every matrix OS, not
+        # just the Linux coverage job.
+        run: cargo test --workspace

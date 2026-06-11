@@ -162,6 +162,9 @@ fn fixed_palettes_complete_and_defaults_pinned() {
                     m.id
                 );
             }
+            // PaletteModel is non_exhaustive; a new variant must come with
+            // its own consistency checks here.
+            _ => panic!("{}: unchecked palette model variant", m.id),
         }
     }
 }

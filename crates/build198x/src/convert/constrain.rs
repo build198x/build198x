@@ -26,14 +26,14 @@ use super::colour::{Metric, srgb8_to_linear};
 /// MIX_LEVELS` for `k` in `0..=MIX_LEVELS`. 8 gives nine levels — fine
 /// enough that an ordered 8×8 Bayer render can actually hit each level,
 /// coarse enough to keep the exhaustive searches fast in debug builds.
-pub const MIX_LEVELS: usize = 8;
+pub(crate) const MIX_LEVELS: usize = 8;
 
 /// C64 multicolour pruning width: per cell, the top `K` palette colours by
 /// the deterministic frequency/error-fit ranking (see
 /// [`CellSearcher::c64_multi`]) are searched as C(K, 3) free-colour
 /// triples. 8 keeps the per-cell search at 56 triples while comfortably
 /// covering the colours a 4×8 cell can use.
-pub const MULTI_PRUNE_K: usize = 8;
+pub(crate) const MULTI_PRUNE_K: usize = 8;
 
 /// The minimum metric distance from `p` to any projection in `row`
 /// (strict `<` scan in row order — the earliest minimum wins, per the
@@ -205,13 +205,13 @@ impl CellSearcher {
     /// Flat index of the unordered pair `(i, j)`, `i <= j`, in the
     /// upper-triangle-with-diagonal layout.
     #[must_use]
-    pub fn pair_index(&self, i: usize, j: usize) -> usize {
+    pub(crate) fn pair_index(&self, i: usize, j: usize) -> usize {
         tri_index(self.pal.len(), i, j)
     }
 
     /// The precomputed mix projections for pair `(i, j)`, `i <= j`.
     #[must_use]
-    pub fn mix_projections(&self, i: u8, j: u8) -> &[[f32; 3]; MIX_LEVELS + 1] {
+    pub(crate) fn mix_projections(&self, i: u8, j: u8) -> &[[f32; 3]; MIX_LEVELS + 1] {
         &self.mixes[self.pair_index(usize::from(i), usize::from(j))]
     }
 
@@ -499,7 +499,7 @@ impl CellSearcher {
     /// lexicographic position order, `k` ascending; strict `<` keeps the
     /// first candidate on ties (lowest pair, then lowest `k`).
     #[must_use]
-    pub fn best_mix(&self, pixel_proj: [f32; 3], allowed: &[u8]) -> (u8, u8, usize) {
+    pub(crate) fn best_mix(&self, pixel_proj: [f32; 3], allowed: &[u8]) -> (u8, u8, usize) {
         let mut best = (allowed[0], allowed[0], 0usize);
         let mut best_d = f32::INFINITY;
         for (ai, &a) in allowed.iter().enumerate() {

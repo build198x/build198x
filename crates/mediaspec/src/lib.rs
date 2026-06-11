@@ -30,6 +30,11 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The complete graphics description of one machine.
+///
+/// `#[non_exhaustive]`: external consumers (Emu198x pins this crate by git
+/// rev) must construct via the spec's own data, never literally — later
+/// machines (the Atari ST fast-follow) may add fields.
+#[non_exhaustive]
 pub struct MachineGraphics {
     /// Stable machine id, kebab-case `manufacturer-system` (Emu198x's naming
     /// discipline), e.g. `"commodore-c64"`.
@@ -77,6 +82,10 @@ impl MachineGraphics {
 }
 
 /// One screen mode: the geometry and constraint shape a converter targets.
+///
+/// `#[non_exhaustive]`: later machines may add fields; consume via the
+/// spec's data, never by literal construction outside this crate.
+#[non_exhaustive]
 pub struct ScreenMode {
     /// Mode name, unique within the machine, e.g. `"multicolour-bitmap"`.
     pub name: &'static str,
@@ -136,7 +145,11 @@ impl Ratio {
 }
 
 /// The attribute cell grid of a cell-constrained mode.
+///
+/// `#[non_exhaustive]`: later machines may add fields; consume via the
+/// spec's data, never by literal construction outside this crate.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub struct CellGrid {
     /// Cell width in mode pixels.
     pub width: u8,
@@ -152,6 +165,10 @@ pub struct CellGrid {
 /// variant names a concrete hardware rule; the geometric numbers live in the
 /// mode's [`CellGrid`] so they are stated once.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+///
+/// `#[non_exhaustive]`: new machines bring new constraint rules (the Atari
+/// ST fast-follow), so external matches must carry a wildcard arm.
+#[non_exhaustive]
 pub enum ConstraintRule {
     /// ZX Spectrum attribute rule: per 8×8 cell, one INK and one PAPER
     /// colour (each 0–7), both drawn from the *same* brightness half as
@@ -185,7 +202,11 @@ pub enum ConstraintRule {
 }
 
 /// Border geometry around the paper, in mode pixels.
+///
+/// `#[non_exhaustive]`: later machines may add fields; consume via the
+/// spec's data, never by literal construction outside this crate.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub struct BorderGeometry {
     pub left: u16,
     pub right: u16,
@@ -194,6 +215,10 @@ pub struct BorderGeometry {
 }
 
 /// How colour works on a machine.
+///
+/// `#[non_exhaustive]`: new machines may bring new palette models, so
+/// external matches must carry a wildcard arm.
+#[non_exhaustive]
 pub enum PaletteModel {
     /// A fixed hardware palette whose RGB rendering is a matter of
     /// *interpretation* — each [`NamedPalette`] is one content-versioned,
@@ -224,6 +249,10 @@ impl PaletteModel {
 ///
 /// **Frozen once published**: the values behind a name never change; a
 /// corrected table is a new name (`…-v2`).
+///
+/// `#[non_exhaustive]`: later spec revisions may add fields; consume via
+/// the spec's data, never by literal construction outside this crate.
+#[non_exhaustive]
 pub struct NamedPalette {
     /// Content-versioned name, e.g. `"emu198x-v1"`, `"pepto-v1"`.
     pub name: &'static str,

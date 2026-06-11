@@ -29,10 +29,10 @@ use super::LinearImage;
 use super::constrain::{CellSearcher, MIX_LEVELS, PaletteData};
 
 /// The 4×4 ordered-dither matrix (values 0..=15).
-pub const BAYER4: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+const BAYER4: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
 
 /// The 8×8 ordered-dither matrix (values 0..=63).
-pub const BAYER8: [[u8; 8]; 8] = [
+const BAYER8: [[u8; 8]; 8] = [
     [0, 32, 8, 40, 2, 34, 10, 42],
     [48, 16, 56, 24, 50, 18, 58, 26],
     [12, 44, 4, 36, 14, 46, 6, 38],
@@ -45,7 +45,7 @@ pub const BAYER8: [[u8; 8]; 8] = [
 
 /// Free-palette ordered-dither bias amplitude: one 4-bit gamut step, taken
 /// in linear units (documented constant; see the module docs).
-pub const ORDERED_AMPLITUDE: f32 = 1.0 / 15.0;
+const ORDERED_AMPLITUDE: f32 = 1.0 / 15.0;
 
 /// Dither algorithm selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -73,7 +73,7 @@ impl DitherMode {
 /// `Bayer8` is used for the error-diffusion variants too (callers reject
 /// those before thresholding matters).
 #[must_use]
-pub fn bayer_threshold(mode: DitherMode, x: usize, y: usize) -> f32 {
+fn bayer_threshold(mode: DitherMode, x: usize, y: usize) -> f32 {
     #[allow(clippy::cast_precision_loss)]
     match mode {
         DitherMode::Bayer4 => (f32::from(BAYER4[y % 4][x % 4]) + 0.5) / 16.0,

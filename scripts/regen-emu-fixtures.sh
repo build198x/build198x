@@ -33,7 +33,10 @@ run koala commodore-c64 koa
 run art-studio commodore-c64 art
 run ilbm commodore-amiga-ocs iff --mode lores-pal
 
-(cd "$OUT" && shasum -a 256 smoke.* source.png > SHA256SUMS)
+# sha256sum (GNU/Linux) when available, shasum -a 256 (macOS) otherwise —
+# both print the same "HASH  filename" lines, so SHA256SUMS is identical.
+if command -v sha256sum >/dev/null 2>&1; then SHA256="sha256sum"; else SHA256="shasum -a 256"; fi
+(cd "$OUT" && $SHA256 smoke.* source.png > SHA256SUMS)
 
 echo "--- fixtures regenerated:"
 cat "$OUT/SHA256SUMS"

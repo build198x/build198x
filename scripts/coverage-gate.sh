@@ -10,7 +10,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
-threshold="${COVERAGE_GATE_THRESHOLD:-60}"
+# Default matches the COVERAGE_GATE_THRESHOLD CI sets in
+# .github/workflows/ci.yml, so a bare local run enforces the same floor as
+# CI. Raise both together.
+threshold="${COVERAGE_GATE_THRESHOLD:-50}"
 summary="target/llvm-cov/coverage-summary.json"
 
 if [ ! -f "${summary}" ]; then
