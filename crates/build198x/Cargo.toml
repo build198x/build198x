@@ -7,9 +7,18 @@ license.workspace = true
 repository.workspace = true
 
 # Lib + bin crate: the library carries the format codec modules (src/format/,
-# per decisions/module-and-crate-naming.md); the binary stays a minimal stub
-# until the CLI unit (subcommands, pipeline wiring). No third-party
-# dependencies yet, by design.
+# per decisions/module-and-crate-naming.md, dependency-free by convention)
+# and the conversion pipeline (src/convert/, which may depend on mediaspec
+# and image); the binary stays a minimal stub until the CLI unit
+# (subcommands, pipeline wiring).
+
+[dependencies]
+mediaspec = { path = "../mediaspec" }
+# Decode + DynamicImage only. default-features = false keeps the decoder set
+# explicit (PNG is the byte-identical contract; JPEG/GIF are accepted
+# best-effort — decisions/determinism-contract.md) and keeps `rayon` out:
+# no parallel paths anywhere near the contracted pixel passes.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
 
 [lints]
 workspace = true
