@@ -1,0 +1,45 @@
+# release-plz configuration.
+#
+# Trigger: every push to main runs release-plz, which opens (or updates) a
+# "chore: release" PR with a bumped workspace version and a CHANGELOG entry
+# generated from the new commits (conventional-commit prefixes drive the
+# bump). Merging that PR creates a git tag, which fires
+# .github/workflows/release.yml (cargo-dist) to build the `build198x` CLI and
+# attach the archives to a GitHub Release.
+#
+# Versioning is lockstep: every workspace crate inherits its version from
+# [workspace.package] in Cargo.toml, so a single bump applies everywhere.
+#
+# publish = false: we do NOT publish to crates.io (the binary ships via the
+# GitHub Release instead, and generic crate names shouldn't be claimed
+# there). git_release_enable = false: cargo-dist owns the GitHub Release,
+# not release-plz — release-plz only bumps, changelogs, and tags.
+[workspace]
+publish = false
+git_release_enable = false
+git_tag_enable = true
+changelog_update = true
+
+# git_only = true: take the previous version from the git tag, not the
+# crates.io registry. Required whenever publish = false — with no registry
+# baseline, release-plz can't see the last release and never bumps the version
+# (it reports "already up-to-date" and opens no release PR). See the umbrella
+# project-skeleton-standard decision for the full story.
+# (Must precede any [[package]] table below: it is a [workspace] key.)
+git_only = true
+
+# Library crates are not dist-able (no binary) and never ship independently —
+# they exist only as dependencies of `build198x`. cargo-dist's release.yml
+# fires on any version-like tag and errors on a non-dist-able package, so a
+# `<lib>-vX.Y.Z` tag would produce a failed or junk release run (Asm198x's
+# `isa-disasm` did exactly that once — a Release with only a
+# dist-manifest.json, and it grabbed the "Latest" badge). Keep library crates
+# version-bumped (lockstep) but untagged; only `build198x-vX.Y.Z` drives a
+# release.
+#
+# The workspace has no library crates yet. When a unit adds one under
+# crates/, add a block for it here in the same change:
+#
+#   [[package]]
+#   name = "<library-crate>"
+#   git_tag_enable = false

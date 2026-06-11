@@ -1,0 +1,58 @@
+# Build198x — the 198x family's build-tools pipeline: asset conversion,
+# data packing, and media mastering. One workspace, many crates.
+#
+# Scope decision and the membership test live in the umbrella decision
+# record: ../decisions/build198x-build-tools.md
+#
+# Build-time levers (baked in from line one so this never drifts toward the
+# Emu198x `cargo test` pain — see ../decisions, "build-time" notes):
+#   * default-members keeps a bare `cargo build`/`test` scoped to the CLI;
+#   * [profile.dev] drops full debuginfo, the biggest `cargo test` link cost.
+# Build tools are featherweight (no wgpu/winit/audio), so this stays fast.
+
+[workspace]
+resolver = "2"
+# Glob membership: later units add crates under crates/ without editing this
+# list. default-members still pins the bare-command scope to the CLI.
+members = ["crates/*"]
+default-members = ["crates/build198x"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "GPL-2.0-or-later"
+repository = "https://github.com/build198x/build198x"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+unwrap_used = "deny"
+
+[profile.dev]
+# Line tables give backtraces without the full-debuginfo link tax. This is
+# the lever that matters most once a workspace grows many test binaries.
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# cargo-dist release configuration. On a `v*` tag push (created by
+# release-plz when its release PR merges), .github/workflows/release.yml
+# builds the `build198x` CLI for each target and attaches archives to a
+# GitHub Release. Regenerate that workflow with `dist generate` after
+# editing this section. Library crates have no binary, so dist ignores them.
+[workspace.metadata.dist]
+cargo-dist-version = "0.32.0"
+ci = "github"
+installers = []
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+pr-run-mode = "plan"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"

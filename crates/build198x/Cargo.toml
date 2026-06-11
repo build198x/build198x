@@ -1,0 +1,13 @@
+[package]
+name = "build198x"
+description = "The 198x family's build-tools pipeline — asset conversion, data packing, and media mastering for retro targets."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Minimal binary stub: the CLI proper (subcommands, pipeline wiring) arrives
+# in a later unit. No third-party dependencies yet, by design.
+
+[lints]
+workspace = true
