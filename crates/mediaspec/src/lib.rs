@@ -24,6 +24,11 @@
 //! compile-time constant: zero dependencies, no allocation, diffable in
 //! review (the same stance as the `isa` crate in Asm198x).
 
+/// This crate's version, surfaced so tools that consume the spec (the
+/// `build198x` CLI report's `mediaspec_version` field) can state which spec
+/// they converted against.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// The complete graphics description of one machine.
 pub struct MachineGraphics {
     /// Stable machine id, kebab-case `manufacturer-system` (Emu198x's naming

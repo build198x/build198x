@@ -1,0 +1,35 @@
+{
+  "converter_version": "NORM",
+  "mediaspec_version": "NORM",
+  "machine": "commodore-c64",
+  "mode": "multicolour-bitmap",
+  "format": "koala",
+  "palette": {
+    "kind": "named",
+    "name": "emu198x-v1",
+    "colours": ["000000", "ffffff", "883932", "67b6bd", "8b3f96", "55a049", "40318d", "bfce72", "8b5429", "574200", "b86962", "505050", "787878", "94e089", "7868c0", "9f9f9f"]
+  },
+  "options": {
+    "metric": "oklab",
+    "dither": "ordered8",
+    "strength": 32,
+    "matte": "000000",
+    "force": false
+  },
+  "files": [
+    {
+      "input": "bands.png",
+      "status": "ok",
+      "outputs": ["bands.koa"],
+      "warnings": [],
+      "quality": {
+        "mean_error": 0.0,
+        "cells_over_threshold": 0
+      }
+    }
+  ],
+  "summary": {
+    "ok": 1,
+    "failed": 0
+  }
+}
