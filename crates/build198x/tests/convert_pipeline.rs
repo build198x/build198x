@@ -5,7 +5,7 @@
 use build198x::convert::ConvertError;
 use build198x::convert::colour::Metric;
 use build198x::convert::dither::DitherMode;
-use build198x::convert::pipeline::{CellChoice, Options, convert};
+use build198x::convert::pipeline::{CellChoice, Options, convert, default_dither};
 use image::{DynamicImage, RgbImage};
 use mediaspec::Rgb;
 
@@ -315,4 +315,50 @@ fn exhaustive_background_is_deterministic_and_tie_breaks_low() {
     assert!(e1.report.mean_error < 1e-12);
     assert_eq!(e1.pixels, e2.pixels);
     assert_eq!(e1.report, e2.report);
+}
+
+#[test]
+fn dither_default_resolves_per_target() {
+    // The shared resolver: planar (free-palette) targets default to
+    // serpentine Floyd–Steinberg, cell-constrained targets to 8×8 Bayer.
+    use mediaspec::ConstraintRule;
+    assert_eq!(
+        default_dither(ConstraintRule::Planar { max_planes: 5 }),
+        DitherMode::FloydSteinberg
+    );
+    for rule in [
+        ConstraintRule::SpectrumAttr,
+        ConstraintRule::C64Hires,
+        ConstraintRule::C64Multicolour,
+    ] {
+        assert_eq!(default_dither(rule), DitherMode::Bayer8, "{rule:?}");
+    }
+
+    // Options::new inherits the resolver, so library consumers and the
+    // emu-smoke goldens share the CLI's defaults.
+    assert_eq!(
+        Options::new("commodore-amiga-ocs", "lores-pal").dither,
+        DitherMode::FloydSteinberg
+    );
+    assert_eq!(
+        Options::new("commodore-amiga-ocs", "hires-ntsc").dither,
+        DitherMode::FloydSteinberg
+    );
+    for (machine, mode) in [
+        ("sinclair-zx-spectrum", "standard"),
+        ("commodore-c64", "hires-bitmap"),
+        ("commodore-c64", "multicolour-bitmap"),
+    ] {
+        assert_eq!(
+            Options::new(machine, mode).dither,
+            DitherMode::Bayer8,
+            "{machine} {mode}"
+        );
+    }
+    // Unknown targets fall back to the ordered default; convert() rejects
+    // them before the dither choice matters.
+    assert_eq!(
+        Options::new("acorn-electron", "standard").dither,
+        DitherMode::Bayer8
+    );
 }

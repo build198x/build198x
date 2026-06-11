@@ -371,9 +371,15 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
             .ok_or_else(|| format!("--dither-strength must be an integer 0..=64, got `{s}`"))?,
     };
     // `--dither none` is sugar for strength 0 — the pipeline's canonical
-    // no-dither representation (one field, not two).
+    // no-dither representation (one field, not two). When `--dither` is
+    // absent the pipeline's per-target default applies (ordered8 for cell
+    // modes, fs for planar) — the report echoes the resolved mode.
     let (dither, strength) = match dither_arg.as_deref() {
-        None | Some("ordered8") => (DitherMode::Bayer8, strength),
+        None => (
+            build198x::convert::pipeline::default_dither(mode_spec.constraint),
+            strength,
+        ),
+        Some("ordered8") => (DitherMode::Bayer8, strength),
         Some("ordered4") => (DitherMode::Bayer4, strength),
         Some("fs") => (DitherMode::FloydSteinberg, strength),
         Some("atkinson") => (DitherMode::Atkinson, strength),
@@ -1094,7 +1100,9 @@ fn image_usage() -> &'static str {
      \x20                            default: the spec's pinned default, emu198x-v1)\n\
      \x20 --metric <m>               oklab | weighted-rgb | yuv (default oklab)\n\
      \x20 --dither <d>               ordered4 | ordered8 | fs | atkinson | none\n\
-     \x20                            (default ordered8; fs/atkinson are ilbm-only)\n\
+     \x20                            (default per target: ordered8 for the cell-constrained\n\
+     \x20                            formats scr/koala/art-studio, fs for ilbm;\n\
+     \x20                            fs/atkinson are ilbm-only)\n\
      \x20 --dither-strength <0..64>  dither strength (default 32; 0 disables dithering\n\
      \x20                            and reports as `none`)\n\
      \x20 --matte <rrggbb>           matte under alpha + letterbox colour (default 000000)\n\

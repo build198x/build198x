@@ -753,6 +753,12 @@ fn smoke_ilbm_output_decodes_and_preview_is_valid_png() {
         stdout.contains("\"mode\": \"lores-pal\""),
         "default ilbm mode"
     );
+    // No --dither passed: planar targets default to Floyd–Steinberg and
+    // the report echoes the *resolved* mode, not a generic default.
+    assert!(
+        stdout.contains("\"dither\": \"fs\""),
+        "planar dither default resolves to fs: {stdout}"
+    );
     assert!(stdout.contains("\"kind\": \"generated\""));
     assert!(stdout.contains("\"gamut_bits\": 4"));
     let bytes = std::fs::read(td.path().join("in.iff")).expect("read ilbm");

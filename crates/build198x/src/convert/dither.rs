@@ -52,10 +52,12 @@ const ORDERED_AMPLITUDE: f32 = 1.0 / 15.0;
 pub enum DitherMode {
     /// Ordered, 4×4 Bayer matrix.
     Bayer4,
-    /// Ordered, 8×8 Bayer matrix (the default).
+    /// Ordered, 8×8 Bayer matrix (the default for cell-constrained
+    /// targets — see `pipeline::default_dither`).
     #[default]
     Bayer8,
-    /// Serpentine Floyd–Steinberg error diffusion (free-palette only).
+    /// Serpentine Floyd–Steinberg error diffusion (free-palette only; the
+    /// default for planar targets — see `pipeline::default_dither`).
     FloydSteinberg,
     /// Serpentine Atkinson error diffusion (free-palette only).
     Atkinson,

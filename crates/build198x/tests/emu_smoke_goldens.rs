@@ -9,9 +9,11 @@
 //! flag parity with the script is the load-bearing property: the script
 //! passes no conversion flags beyond `--mode lores-pal` for ILBM, so the
 //! CLI defaults apply — and [`Options::new`] pins those same defaults
-//! (pinned default interpretation, OKLab metric, 8×8 Bayer at strength 32,
-//! black matte, heuristic background). The CLI encodes ILBM with ByteRun1;
-//! so does this test. A failure is a determinism bug or an unexplained
+//! (pinned default interpretation, OKLab metric, the per-target dither
+//! default — 8×8 Bayer for the cell modes, serpentine Floyd–Steinberg for
+//! planar, both via `pipeline::default_dither` — at strength 32, black
+//! matte, heuristic background). The CLI encodes ILBM with ByteRun1; so
+//! does this test. A failure is a determinism bug or an unexplained
 //! pipeline change, not a regen chore (`decisions/determinism-contract.md`).
 
 mod common;

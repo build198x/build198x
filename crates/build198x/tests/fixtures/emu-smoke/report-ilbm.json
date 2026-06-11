@@ -11,7 +11,7 @@
   },
   "options": {
     "metric": "oklab",
-    "dither": "ordered8",
+    "dither": "fs",
     "strength": 32,
     "matte": "000000",
     "force": true,

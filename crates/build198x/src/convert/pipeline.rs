@@ -32,8 +32,10 @@ pub struct Options {
     pub interpretation: Option<String>,
     /// Colour-distance metric (default OKLab).
     pub metric: Metric,
-    /// Dither algorithm (default 8×8 Bayer). Error-diffusion modes are
-    /// free-palette (planar) targets only.
+    /// Dither algorithm. The default is per-target — see
+    /// [`default_dither`]: cell-constrained modes take 8×8 Bayer,
+    /// free-palette (planar) modes take serpentine Floyd–Steinberg.
+    /// Error-diffusion modes are free-palette (planar) targets only.
     pub dither: DitherMode,
     /// Dither strength, 0..=64 (default 32). **0 is the canonical
     /// no-dither representation**: it disables dithering entirely —
@@ -50,20 +52,41 @@ pub struct Options {
 }
 
 impl Options {
-    /// Defaults: pinned default palette, OKLab metric, 8×8 Bayer at
-    /// strength 32, black matte.
+    /// Defaults: pinned default palette, OKLab metric, the per-target
+    /// dither default (see [`default_dither`]) at strength 32, black
+    /// matte. An unknown machine/mode falls back to the ordered default;
+    /// [`convert`] rejects it anyway.
     #[must_use]
     pub fn new(machine: &str, mode: &str) -> Self {
+        let dither = mediaspec::machine(machine)
+            .and_then(|m| m.mode(mode))
+            .map_or(DitherMode::Bayer8, |md| default_dither(md.constraint));
         Self {
             machine: machine.to_owned(),
             mode: mode.to_owned(),
             interpretation: None,
             metric: Metric::OkLab,
-            dither: DitherMode::Bayer8,
+            dither,
             strength: 32,
             matte: [0, 0, 0],
             exhaustive_background: false,
         }
+    }
+}
+
+/// The dither mode used when the caller does not choose one, resolved per
+/// constraint rule: free-palette planar targets default to serpentine
+/// Floyd–Steinberg (no attribute cells to respect, so diffusion's smoother
+/// gradients win); cell-constrained targets default to ordered 8×8 Bayer
+/// (diffused error cannot respect cell boundaries). The CLI, the Emu198x
+/// smoke goldens, and library consumers all share this one rule.
+/// `ConstraintRule` is `non_exhaustive`; unknown future rules take the
+/// ordered default, which every target accepts.
+#[must_use]
+pub fn default_dither(rule: ConstraintRule) -> DitherMode {
+    match rule {
+        ConstraintRule::Planar { .. } => DitherMode::FloydSteinberg,
+        _ => DitherMode::Bayer8,
     }
 }
 
