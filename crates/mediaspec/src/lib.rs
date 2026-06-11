@@ -252,8 +252,8 @@ pub mod commodore_amiga_ocs;
 pub mod commodore_c64;
 pub mod sinclair_zx_spectrum;
 
-/// Every machine this spec describes.
-pub const MACHINES: &[&MachineGraphics] = &[
+/// Every machine this spec describes ([`machines`] is the public road in).
+const MACHINES: &[&MachineGraphics] = &[
     &sinclair_zx_spectrum::MACHINE,
     &commodore_c64::MACHINE,
     &commodore_amiga_ocs::MACHINE,
@@ -269,12 +269,4 @@ pub const fn machines() -> &'static [&'static MachineGraphics] {
 #[must_use]
 pub fn machine(id: &str) -> Option<&'static MachineGraphics> {
     MACHINES.iter().copied().find(|m| m.id == id)
-}
-
-/// The pinned default palette-interpretation name for a machine, where one
-/// exists (`emu198x-v1` on every fixed-palette machine shipped so far;
-/// `None` for gamut machines and unknown ids).
-#[must_use]
-pub fn default_interpretation(machine_id: &str) -> Option<&'static str> {
-    machine(machine_id)?.default_interpretation
 }

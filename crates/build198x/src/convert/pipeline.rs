@@ -119,6 +119,9 @@ pub struct Conversion {
     /// for fixed-palette machines, or the generated gamut-rounded palette
     /// for planar targets.
     pub palette: Vec<Rgb>,
+    /// The resolved palette interpretation name (the requested name or the
+    /// machine's pinned default); `None` for generated gamut palettes.
+    pub interpretation: Option<String>,
     /// Per-cell choices, row-major cell order. Empty for planar modes.
     pub cells: Vec<CellChoice>,
     /// The global background palette index (C64 multicolour only).
@@ -154,16 +157,33 @@ pub fn convert(img: &image::DynamicImage, opts: &Options) -> Result<Conversion, 
             mode: opts.mode.clone(),
         })?;
 
+    // Resolve the dither knobs once: `no_dither` zeroes the ordered
+    // strength, and diffusion is in effect only when an error-diffusion
+    // mode survives `no_dither`.
+    let plan = DitherPlan {
+        strength: if opts.no_dither { 0 } else { opts.strength },
+        diffuse: !opts.no_dither && !opts.dither.is_ordered(),
+    };
+
     let normalised = normalise::normalise(img, opts.matte)?;
     let linear = resize::to_linear(&normalised);
     let target = resize::letterbox(&linear, mode, srgb8_to_linear(opts.matte));
 
     match mode.constraint {
         ConstraintRule::Planar { max_planes } => {
-            convert_planar(machine, mode, opts, &normalised, &target, max_planes)
+            convert_planar(machine, mode, opts, &normalised, &target, max_planes, plan)
         }
-        _ => convert_cells(machine, mode, opts, &normalised, &target),
+        _ => convert_cells(machine, mode, opts, &normalised, &target, plan),
     }
+}
+
+/// The dither knobs resolved once at the top of [`convert`]: the effective
+/// ordered strength (zeroed by `no_dither`) and whether error diffusion is
+/// in effect.
+#[derive(Clone, Copy)]
+struct DitherPlan {
+    strength: u8,
+    diffuse: bool,
 }
 
 /// Cell-constrained path: Spectrum attributes, C64 hires, C64 multicolour.
@@ -173,11 +193,12 @@ fn convert_cells(
     opts: &Options,
     normalised: &Rgb8Image,
     target: &LinearImage,
+    plan: DitherPlan,
 ) -> Result<Conversion, ConvertError> {
-    if !opts.dither.is_ordered() && !opts.no_dither {
+    if plan.diffuse {
         return Err(ConvertError::DiffusionNeedsFreePalette);
     }
-    let palette = resolve_palette(machine, opts)?;
+    let (interpretation, palette) = resolve_palette(machine, opts)?;
     let cell = mode.cell.ok_or(ConvertError::Internal {
         what: "cell-constrained mode without a cell grid",
     })?;
@@ -185,51 +206,68 @@ fn convert_cells(
 
     let searcher = CellSearcher::new(PaletteData::new(palette, opts.metric));
     let width = target.width as usize;
+    let height = target.height as usize;
     let cells_x = width / cell_w;
-    let cells_y = target.height as usize / cell_h;
+    let cells_y = height / cell_h;
     let pixels_per_cell = cell_w * cell_h;
+
+    // Project the whole image into metric space once; every consumer below
+    // (cell search, dither render, background histogram) reads from this
+    // buffer. A pixel's projection is a pure function of its linear value,
+    // so sharing the buffer is bitwise-identical to projecting per
+    // consumer.
+    let projected: Vec<[f32; 3]> = target
+        .pixels
+        .iter()
+        .map(|&p| searcher.pal.metric.project(p))
+        .collect();
 
     // Per-cell search.
     let (outcome, background) = match mode.constraint {
-        ConstraintRule::SpectrumAttr => {
-            let outcome = search_all_cells(target, cell_w, cell_h, |cell_px| {
-                let (choice, score) = searcher.spectrum(cell_px);
-                (
-                    CellChoice::Spectrum(choice),
-                    pair_allowed(choice.ink, choice.paper),
-                    score,
-                )
-            });
-            (outcome, None)
-        }
-        ConstraintRule::C64Hires => {
-            let outcome = search_all_cells(target, cell_w, cell_h, |cell_px| {
-                let (choice, score) = searcher.c64_hires(cell_px);
-                (
-                    CellChoice::Hires(choice),
-                    pair_allowed(choice.fg, choice.bg),
-                    score,
-                )
+        rule @ (ConstraintRule::SpectrumAttr | ConstraintRule::C64Hires) => {
+            let outcome = search_all_cells(&projected, width, height, cell_w, cell_h, |projs| {
+                let (choice, a, b, score) = if matches!(rule, ConstraintRule::SpectrumAttr) {
+                    let (c, s) = searcher.spectrum(projs);
+                    (CellChoice::Spectrum(c), c.ink, c.paper, s)
+                } else {
+                    let (c, s) = searcher.c64_hires(projs);
+                    (CellChoice::Hires(c), c.fg, c.bg, s)
+                };
+                (choice, pair_allowed(a, b), score)
             });
             (outcome, None)
         }
         ConstraintRule::C64Multicolour => {
+            // Everything background-independent is hoisted out of the
+            // candidate loop: the per-pixel nearest-index map (shared with
+            // the background histogram and the per-cell frequency ranking)
+            // and the per-cell pixel gathers.
+            let nearest: Vec<u8> = projected.iter().map(|&p| searcher.pal.nearest(p)).collect();
+            let cell_projs = gather_cells(&projected, width, cells_x, cells_y, cell_w, cell_h);
+            let cell_nearest = gather_cells(&nearest, width, cells_x, cells_y, cell_w, cell_h);
+
             let backgrounds: Vec<u8> = if opts.exhaustive_background {
                 (0..u8::try_from(searcher.pal.len()).unwrap_or(u8::MAX)).collect()
             } else {
-                vec![super::constrain::choose_background(target, &searcher.pal)]
+                vec![super::constrain::choose_background(
+                    &nearest,
+                    searcher.pal.len(),
+                )]
             };
             // Lowest total score wins; ascending enumeration + strict <
             // gives the lowest background index on ties.
             let mut best: Option<(CellOutcome, u8, f32)> = None;
             for bg in backgrounds {
-                let outcome = search_all_cells(target, cell_w, cell_h, |cell_px| {
-                    let (choice, score) = searcher.c64_multi(cell_px, bg);
+                let mut outcome = CellOutcome::with_capacity(cells_x * cells_y);
+                for cell in 0..cells_x * cells_y {
+                    let range = cell * pixels_per_cell..(cell + 1) * pixels_per_cell;
+                    let (choice, score) =
+                        searcher.c64_multi(&cell_projs[range.clone()], &cell_nearest[range], bg);
                     let mut colours = choice.colours.to_vec();
                     colours.sort_unstable();
                     colours.dedup();
-                    (CellChoice::Multi(choice), colours, score)
-                });
+                    outcome.push(CellChoice::Multi(choice), colours, score);
+                }
                 let total: f32 = outcome.scores.iter().sum();
                 if best.as_ref().is_none_or(|(_, _, t)| total < *t) {
                     best = Some((outcome, bg, total));
@@ -247,15 +285,16 @@ fn convert_cells(
         }
     };
 
-    let strength = if opts.no_dither { 0 } else { opts.strength };
     let pixels = dither::render_cells(
-        target,
+        &projected,
+        width,
+        height,
         &searcher,
         &outcome.allowed,
         cell_w,
         cell_h,
         opts.dither,
-        strength,
+        plan.strength,
     );
 
     #[allow(clippy::cast_precision_loss)]
@@ -278,6 +317,7 @@ fn convert_cells(
         height: target.height,
         pixels,
         palette: palette.to_vec(),
+        interpretation: Some(interpretation.to_owned()),
         cells: outcome.choices,
         background,
         n_planes: None,
@@ -299,6 +339,7 @@ fn convert_planar(
     normalised: &Rgb8Image,
     target: &LinearImage,
     max_planes: u8,
+    plan: DitherPlan,
 ) -> Result<Conversion, ConvertError> {
     let PaletteModel::Gamut { bits_per_gun } = machine.palette else {
         return Err(ConvertError::Internal {
@@ -316,11 +357,10 @@ fn convert_planar(
     let palette = quantise::generate_palette(target, budget, bits_per_gun);
     let pal = PaletteData::new(&palette, opts.metric);
 
-    let strength = if opts.no_dither { 0 } else { opts.strength };
-    let pixels = if opts.no_dither || opts.dither.is_ordered() {
-        dither::ordered_planar(target, &pal, opts.dither, strength)
-    } else {
+    let pixels = if plan.diffuse {
         dither::diffuse_planar(target, &pal, opts.dither)
+    } else {
+        dither::ordered_planar(target, &pal, opts.dither, plan.strength)
     };
 
     // Modelled error: nearest-palette distance, pre-dither.
@@ -344,6 +384,7 @@ fn convert_planar(
         pixels,
         n_planes: Some(needed_planes(palette.len(), max_planes)),
         palette,
+        interpretation: None,
         cells: Vec::new(),
         background: None,
         report: Report {
@@ -356,11 +397,11 @@ fn convert_planar(
 }
 
 /// Resolve a fixed-palette machine's interpretation (requested name or the
-/// pinned default).
+/// pinned default) to its name and colours.
 fn resolve_palette<'m>(
     machine: &'m MachineGraphics,
     opts: &Options,
-) -> Result<&'m [Rgb], ConvertError> {
+) -> Result<(&'m str, &'m [Rgb]), ConvertError> {
     let name = opts
         .interpretation
         .as_deref()
@@ -371,7 +412,7 @@ fn resolve_palette<'m>(
         })?;
     machine
         .interpretation(name)
-        .map(|p| p.colours)
+        .map(|p| (p.name, p.colours))
         .ok_or_else(|| ConvertError::UnknownInterpretation {
             machine: machine.id.to_owned(),
             name: name.to_owned(),
@@ -388,22 +429,35 @@ struct CellOutcome {
     scores: Vec<f32>,
 }
 
-/// Run `search` over every cell, row-major.
+impl CellOutcome {
+    fn with_capacity(cells: usize) -> Self {
+        Self {
+            choices: Vec::with_capacity(cells),
+            allowed: Vec::with_capacity(cells),
+            scores: Vec::with_capacity(cells),
+        }
+    }
+
+    fn push(&mut self, choice: CellChoice, allowed: Vec<u8>, score: f32) {
+        self.choices.push(choice);
+        self.allowed.push(allowed);
+        self.scores.push(score);
+    }
+}
+
+/// Run `search` over every cell of the projected image, row-major.
 fn search_all_cells(
-    target: &LinearImage,
+    projected: &[[f32; 3]],
+    width: usize,
+    height: usize,
     cell_w: usize,
     cell_h: usize,
     mut search: impl FnMut(&[[f32; 3]]) -> (CellChoice, Vec<u8>, f32),
 ) -> CellOutcome {
-    let width = target.width as usize;
     let cells_x = width / cell_w;
-    let cells_y = target.height as usize / cell_h;
+    let cells_y = height / cell_h;
 
-    let mut outcome = CellOutcome {
-        choices: Vec::with_capacity(cells_x * cells_y),
-        allowed: Vec::with_capacity(cells_x * cells_y),
-        scores: Vec::with_capacity(cells_x * cells_y),
-    };
+    let mut outcome = CellOutcome::with_capacity(cells_x * cells_y);
     let mut cell_px = vec![[0.0f32; 3]; cell_w * cell_h];
 
     for cy in 0..cells_y {
@@ -411,15 +465,38 @@ fn search_all_cells(
             for row in 0..cell_h {
                 let base = (cy * cell_h + row) * width + cx * cell_w;
                 cell_px[row * cell_w..(row + 1) * cell_w]
-                    .copy_from_slice(&target.pixels[base..base + cell_w]);
+                    .copy_from_slice(&projected[base..base + cell_w]);
             }
             let (choice, list, score) = search(&cell_px);
-            outcome.choices.push(choice);
-            outcome.allowed.push(list);
-            outcome.scores.push(score);
+            outcome.push(choice, list, score);
         }
     }
     outcome
+}
+
+/// Gather a row-major image buffer into contiguous per-cell blocks
+/// (row-major cell order, row-major within each cell — the same order
+/// [`search_all_cells`] visits pixels).
+fn gather_cells<T: Copy + Default>(
+    buf: &[T],
+    width: usize,
+    cells_x: usize,
+    cells_y: usize,
+    cell_w: usize,
+    cell_h: usize,
+) -> Vec<T> {
+    let mut out = vec![T::default(); cells_x * cells_y * cell_w * cell_h];
+    for cy in 0..cells_y {
+        for cx in 0..cells_x {
+            let cell = cy * cells_x + cx;
+            for row in 0..cell_h {
+                let src = (cy * cell_h + row) * width + cx * cell_w;
+                let dst = (cell * cell_h + row) * cell_w;
+                out[dst..dst + cell_w].copy_from_slice(&buf[src..src + cell_w]);
+            }
+        }
+    }
+    out
 }
 
 /// Sorted, deduplicated two-colour allowed list.
@@ -543,6 +620,39 @@ fn planar_input_already_constrained(
     true
 }
 
+/// Pack one 8-row cell of indexed pixels into 8 bitmap bytes: each pixel
+/// becomes the position of its palette index in `slots` (first match wins,
+/// so when a cell's colours coincide the earlier slot takes the pixel —
+/// paper beats ink, background beats foreground), `bits` wide (1 or 2),
+/// MSB = leftmost. The caller places the bytes (bitmap addressing stays
+/// per-bridge) and supplies the `escape` text for the internal error when a
+/// pixel sits outside its cell's colours (a pipeline bug).
+fn pack_cell(
+    pixels: &[u8],
+    width: usize,
+    cx: usize,
+    cy: usize,
+    slots: &[u8],
+    bits: usize,
+    escape: &'static str,
+) -> Result<[u8; 8], ConvertError> {
+    let px_per_byte = 8 / bits;
+    let mut out = [0u8; 8];
+    for (row, byte) in out.iter_mut().enumerate() {
+        let y = cy * 8 + row;
+        for pos in 0..px_per_byte {
+            let px = pixels[y * width + cx * px_per_byte + pos];
+            let value = slots
+                .iter()
+                .position(|&s| s == px)
+                .and_then(|v| u8::try_from(v).ok())
+                .ok_or(ConvertError::Internal { what: escape })?;
+            *byte |= value << (8 - bits - pos * bits);
+        }
+    }
+    Ok(out)
+}
+
 /// Map every pixel to the lowest palette index with an exactly equal RGB,
 /// or `None` if any pixel misses the palette.
 fn exact_indices(img: &Rgb8Image, palette: &[Rgb]) -> Option<Vec<u8>> {
@@ -584,23 +694,18 @@ impl Conversion {
 
             let cy = cell_idx / scr::COLUMNS;
             let cx = cell_idx % scr::COLUMNS;
-            for row in 0..8 {
-                let y = cy * 8 + row;
-                let mut byte = 0u8;
-                for bit in 0..8 {
-                    let px = self.pixels[y * width + cx * 8 + bit];
-                    let set = if px == attr.paper {
-                        false // Paper wins when ink == paper.
-                    } else if px == attr.ink {
-                        true
-                    } else {
-                        return Err(ConvertError::Internal {
-                            what: "pixel outside its Spectrum cell colours",
-                        });
-                    };
-                    byte |= u8::from(set) << (7 - bit);
-                }
-                screen.bitmap[y * scr::COLUMNS + cx] = byte;
+            // Slot order [paper, ink]: paper wins when ink == paper.
+            let rows = pack_cell(
+                &self.pixels,
+                width,
+                cx,
+                cy,
+                &[attr.paper, attr.ink],
+                1,
+                "pixel outside its Spectrum cell colours",
+            )?;
+            for (row, &byte) in rows.iter().enumerate() {
+                screen.bitmap[(cy * 8 + row) * scr::COLUMNS + cx] = byte;
             }
         }
         Ok(screen)
@@ -628,24 +733,18 @@ impl Conversion {
 
             let cy = cell_idx / art_studio::CELL_COLUMNS;
             let cx = cell_idx % art_studio::CELL_COLUMNS;
-            for row in 0..8 {
-                let y = cy * 8 + row;
-                let mut byte = 0u8;
-                for bit in 0..8 {
-                    let px = self.pixels[y * width + cx * 8 + bit];
-                    let set = if px == pair.bg {
-                        false // Background wins when fg == bg.
-                    } else if px == pair.fg {
-                        true
-                    } else {
-                        return Err(ConvertError::Internal {
-                            what: "pixel outside its hires cell colours",
-                        });
-                    };
-                    byte |= u8::from(set) << (7 - bit);
-                }
-                let offset = (cy * art_studio::CELL_COLUMNS + cx) * 8 + row;
-                img.bitmap[offset] = byte;
+            // Slot order [bg, fg]: background wins when fg == bg.
+            let rows = pack_cell(
+                &self.pixels,
+                width,
+                cx,
+                cy,
+                &[pair.bg, pair.fg],
+                1,
+                "pixel outside its hires cell colours",
+            )?;
+            for (row, &byte) in rows.iter().enumerate() {
+                img.bitmap[(cy * art_studio::CELL_COLUMNS + cx) * 8 + row] = byte;
             }
         }
         Ok(img)
@@ -673,35 +772,25 @@ impl Conversion {
                     what: "non-multicolour cell choice in a multicolour conversion",
                 });
             };
-            let [bg, c01, c10, c11] = multi.colours;
+            let [_, c01, c10, c11] = multi.colours;
             img.screen_ram[cell_idx] = c01 << 4 | c10;
             img.color_ram[cell_idx] = c11;
 
             let cy = cell_idx / koala::CELL_COLUMNS;
             let cx = cell_idx % koala::CELL_COLUMNS;
-            for row in 0..8 {
-                let y = cy * 8 + row;
-                let mut byte = 0u8;
-                for pos in 0..4 {
-                    let px = self.pixels[y * width + cx * 4 + pos];
-                    // Background first, then the free slots in order.
-                    let pair = if px == bg {
-                        0b00
-                    } else if px == c01 {
-                        0b01
-                    } else if px == c10 {
-                        0b10
-                    } else if px == c11 {
-                        0b11
-                    } else {
-                        return Err(ConvertError::Internal {
-                            what: "pixel outside its multicolour cell colours",
-                        });
-                    };
-                    byte |= pair << (6 - 2 * pos);
-                }
-                let offset = (cy * koala::CELL_COLUMNS + cx) * 8 + row;
-                img.bitmap[offset] = byte;
+            // Slot order [bg, c01, c10, c11]: background first, then the
+            // free slots in order — matching the bit-pair values.
+            let rows = pack_cell(
+                &self.pixels,
+                width,
+                cx,
+                cy,
+                &multi.colours,
+                2,
+                "pixel outside its multicolour cell colours",
+            )?;
+            for (row, &byte) in rows.iter().enumerate() {
+                img.bitmap[(cy * koala::CELL_COLUMNS + cx) * 8 + row] = byte;
             }
         }
         Ok(img)
@@ -727,7 +816,14 @@ impl Conversion {
         let n_planes = self.n_planes.ok_or(ConvertError::Internal {
             what: "planar conversion without a plane count",
         })?;
-        let camg = if self.mode_name.starts_with("hires") {
+        // The HIRES bit follows the mode's spec data: a 1:2 pixel aspect is
+        // the half-width-pixel (hires) marker, not the mode's name.
+        let mode = mediaspec::machine(&self.machine_id)
+            .and_then(|m| m.mode(&self.mode_name))
+            .ok_or(ConvertError::Internal {
+                what: "conversion names a machine/mode the spec does not hold",
+            })?;
+        let camg = if mode.pixel_aspect == mediaspec::Ratio::new(1, 2) {
             ilbm::CAMG_HIRES
         } else {
             0

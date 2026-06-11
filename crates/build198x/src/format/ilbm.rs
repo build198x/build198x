@@ -203,7 +203,10 @@ pub fn decode(bytes: &[u8]) -> Result<Ilbm, DecodeError> {
     let mut header: Option<Bmhd> = None;
     let mut palette: Vec<[u8; 3]> = Vec::new();
     let mut camg = 0u32;
-    let mut image: Option<Ilbm> = None;
+    // The decoded BODY with the BMHD geometry it was decoded against
+    // (`header` may in principle be replaced by a later BMHD chunk):
+    // (width, height, n_planes, pixels).
+    let mut body: Option<(u16, u16, u8, Vec<u8>)> = None;
 
     while pos + 8 <= form_end {
         let id = &bytes[pos..pos + 4];
@@ -247,7 +250,12 @@ pub fn decode(bytes: &[u8]) -> Result<Ilbm, DecodeError> {
                 let bmhd = header
                     .as_ref()
                     .ok_or(DecodeError::MissingChunk { id: "BMHD" })?;
-                image = Some(decode_body(bmhd, data)?);
+                body = Some((
+                    bmhd.width,
+                    bmhd.height,
+                    bmhd.n_planes,
+                    decode_body(bmhd, data)?,
+                ));
             }
             _ => {} // Unknown chunk: skip.
         }
@@ -255,10 +263,15 @@ pub fn decode(bytes: &[u8]) -> Result<Ilbm, DecodeError> {
         pos = data_end + (size & 1); // Even-length chunk padding.
     }
 
-    let mut image = image.ok_or(DecodeError::MissingChunk { id: "BODY" })?;
-    image.palette = palette;
-    image.camg = camg;
-    Ok(image)
+    let (width, height, n_planes, pixels) = body.ok_or(DecodeError::MissingChunk { id: "BODY" })?;
+    Ok(Ilbm {
+        width,
+        height,
+        n_planes,
+        palette,
+        pixels,
+        camg,
+    })
 }
 
 /// Parsed BMHD fields the decoder needs.
@@ -324,7 +337,9 @@ fn parse_bmhd(data: &[u8]) -> Result<Bmhd, DecodeError> {
     })
 }
 
-fn decode_body(bmhd: &Bmhd, body: &[u8]) -> Result<Ilbm, DecodeError> {
+/// Decode a BODY chunk's scanlines into chunky indexed pixels, row-major
+/// `width × height` entries.
+fn decode_body(bmhd: &Bmhd, body: &[u8]) -> Result<Vec<u8>, DecodeError> {
     let width = usize::from(bmhd.width);
     let height = usize::from(bmhd.height);
     let planes = usize::from(bmhd.n_planes);
@@ -366,14 +381,7 @@ fn decode_body(bmhd: &Bmhd, body: &[u8]) -> Result<Ilbm, DecodeError> {
     }
     // Trailing BODY bytes (some writers over-pad) are tolerated.
 
-    Ok(Ilbm {
-        width: bmhd.width,
-        height: bmhd.height,
-        n_planes: bmhd.n_planes,
-        palette: Vec::new(),
-        pixels,
-        camg: 0,
-    })
+    Ok(pixels)
 }
 
 /// Unpack exactly one ByteRun1 scanline (`out.len()` bytes) from `body`,

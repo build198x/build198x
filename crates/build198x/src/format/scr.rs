@@ -51,7 +51,13 @@ pub fn bitmap_file_offset(y: usize, column: usize) -> Option<usize> {
     if y >= HEIGHT || column >= COLUMNS {
         return None;
     }
-    Some(((y & 0xC0) << 5) | ((y & 0x07) << 8) | ((y & 0x38) << 2) | column)
+    Some(interleave_offset(y, column))
+}
+
+/// The Smith interleave for in-range coordinates — infallible, for the
+/// encode/decode loops that iterate the full grid by construction.
+fn interleave_offset(y: usize, column: usize) -> usize {
+    ((y & 0xC0) << 5) | ((y & 0x07) << 8) | ((y & 0x38) << 2) | column
 }
 
 /// File offset of the attribute byte for cell row `row` (0..24), cell column
@@ -96,15 +102,6 @@ impl Screen {
         let byte = self.bitmap.get(y * COLUMNS + x / 8)?;
         Some(byte & (0x80 >> (x & 7)) != 0)
     }
-
-    /// The attribute byte covering pixel `(x, y)`, or `None` out of range.
-    #[must_use]
-    pub fn attribute_at(&self, x: usize, y: usize) -> Option<u8> {
-        if x >= WIDTH || y >= HEIGHT {
-            return None;
-        }
-        self.attributes.get((y / 8) * COLUMNS + x / 8).copied()
-    }
 }
 
 /// Encode a [`Screen`] into the 6,912-byte SCR file layout, applying the
@@ -133,10 +130,7 @@ pub fn encode(screen: &Screen) -> Result<Vec<u8>, EncodeError> {
     let mut out = vec![0u8; FILE_LEN];
     for y in 0..HEIGHT {
         for column in 0..COLUMNS {
-            // Both offsets are in range by construction of the loops.
-            if let Some(file_offset) = bitmap_file_offset(y, column) {
-                out[file_offset] = screen.bitmap[y * COLUMNS + column];
-            }
+            out[interleave_offset(y, column)] = screen.bitmap[y * COLUMNS + column];
         }
     }
     out[BITMAP_LEN..].copy_from_slice(&screen.attributes);
@@ -161,9 +155,7 @@ pub fn decode(bytes: &[u8]) -> Result<Screen, DecodeError> {
     let mut screen = Screen::blank();
     for y in 0..HEIGHT {
         for column in 0..COLUMNS {
-            if let Some(file_offset) = bitmap_file_offset(y, column) {
-                screen.bitmap[y * COLUMNS + column] = bytes[file_offset];
-            }
+            screen.bitmap[y * COLUMNS + column] = bytes[interleave_offset(y, column)];
         }
     }
     screen.attributes.copy_from_slice(&bytes[BITMAP_LEN..]);

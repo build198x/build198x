@@ -1,9 +1,21 @@
-//! Shared helpers for the codec integration tests: fixture paths, golden
-//! byte-fixture comparison, and the wild-file discovery loop.
+//! Shared helpers for the integration tests: fixture paths, golden
+//! byte-fixture comparison, the wild-file discovery loop, and palette
+//! lookup.
 
 #![allow(dead_code)] // Each test target uses a subset of these helpers.
 
 use std::path::PathBuf;
+
+use mediaspec::Rgb;
+
+/// The pinned default palette interpretation's colours for a machine.
+pub fn palette_of(machine: &str) -> &'static [Rgb] {
+    mediaspec::machine(machine)
+        .expect("machine exists")
+        .default_palette()
+        .expect("default palette pinned")
+        .colours
+}
 
 /// Root of the test fixture tree.
 pub fn fixtures() -> PathBuf {

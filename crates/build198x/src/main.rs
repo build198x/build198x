@@ -42,7 +42,7 @@ use build198x::convert::colour::Metric;
 use build198x::convert::dither::DitherMode;
 use build198x::convert::pipeline::{Conversion, Options, convert};
 use build198x::format::{art_studio, ilbm, koala, scr};
-use mediaspec::{PaletteModel, Rgb};
+use mediaspec::{ConstraintRule, PaletteModel, Rgb};
 
 /// Monotonic counter making temp-file names unique within the process.
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -146,10 +146,8 @@ struct ImageArgs {
     /// Palette interpretation name (fixed-palette machines only).
     palette: Option<String>,
     metric: Metric,
-    metric_token: &'static str,
     dither: DitherMode,
     no_dither: bool,
-    dither_token: &'static str,
     strength: u8,
     matte: [u8; 3],
     exhaustive_background: bool,
@@ -290,17 +288,7 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
 
     let mode = match (format.implied_mode(), mode_arg) {
         (None, None) => "lores-pal".to_owned(),
-        (None, Some(m)) => {
-            if spec.mode(&m).is_none() {
-                let names: Vec<&str> = spec.modes.iter().map(|md| md.name).collect();
-                return Err(format!(
-                    "unknown mode `{m}` for {} ({})",
-                    spec.id,
-                    names.join(", ")
-                ));
-            }
-            m
-        }
+        (None, Some(m)) => m,
         (Some(implied), None) => implied.to_owned(),
         (Some(implied), Some(_)) => {
             return Err(format!(
@@ -309,6 +297,14 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
             ));
         }
     };
+    let mode_spec = spec.mode(&mode).ok_or_else(|| {
+        let names: Vec<&str> = spec.modes.iter().map(|md| md.name).collect();
+        format!(
+            "unknown mode `{mode}` for {} ({})",
+            spec.id,
+            names.join(", ")
+        )
+    })?;
 
     if let Some(name) = &palette {
         match spec.palette {
@@ -331,10 +327,10 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
         }
     }
 
-    let (metric, metric_token) = match metric_arg.as_deref() {
-        None | Some("oklab") => (Metric::OkLab, "oklab"),
-        Some("weighted-rgb") => (Metric::WeightedRgb, "weighted-rgb"),
-        Some("yuv") => (Metric::Yuv, "yuv"),
+    let metric = match metric_arg.as_deref() {
+        None | Some("oklab") => Metric::OkLab,
+        Some("weighted-rgb") => Metric::WeightedRgb,
+        Some("yuv") => Metric::Yuv,
         Some(other) => {
             return Err(format!(
                 "unknown metric `{other}` (oklab, weighted-rgb, yuv)"
@@ -342,21 +338,24 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
         }
     };
 
-    let (dither, no_dither, dither_token) = match dither_arg.as_deref() {
-        None | Some("ordered8") => (DitherMode::Bayer8, false, "ordered8"),
-        Some("ordered4") => (DitherMode::Bayer4, false, "ordered4"),
-        Some("fs") => (DitherMode::FloydSteinberg, false, "fs"),
-        Some("atkinson") => (DitherMode::Atkinson, false, "atkinson"),
-        Some("none") => (DitherMode::Bayer8, true, "none"),
+    let (dither, no_dither) = match dither_arg.as_deref() {
+        None | Some("ordered8") => (DitherMode::Bayer8, false),
+        Some("ordered4") => (DitherMode::Bayer4, false),
+        Some("fs") => (DitherMode::FloydSteinberg, false),
+        Some("atkinson") => (DitherMode::Atkinson, false),
+        Some("none") => (DitherMode::Bayer8, true),
         Some(other) => {
             return Err(format!(
                 "unknown dither `{other}` (ordered4, ordered8, fs, atkinson, none)"
             ));
         }
     };
-    if !dither.is_ordered() && format != Format::Ilbm {
+    // Error diffusion needs a free-palette target: keyed on the resolved
+    // mode's constraint rule, not the format token.
+    if !dither.is_ordered() && !matches!(mode_spec.constraint, ConstraintRule::Planar { .. }) {
         return Err(format!(
-            "--dither {dither_token} needs a free-palette (planar) target; cell-constrained formats take ordered4, ordered8, or none"
+            "--dither {} needs a free-palette (planar) target; cell-constrained formats take ordered4, ordered8, or none",
+            dither_token(dither, no_dither)
         ));
     }
 
@@ -374,7 +373,9 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
         Some(s) => parse_matte(&s)?,
     };
 
-    if exhaustive_background && format != Format::Koala {
+    // Exhaustive background search exists only where a global background
+    // does: keyed on the resolved mode's constraint rule.
+    if exhaustive_background && mode_spec.constraint != ConstraintRule::C64Multicolour {
         return Err(
             "--exhaustive-background applies to C64 multicolour (--format koala) only".to_owned(),
         );
@@ -396,10 +397,8 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
         mode,
         palette,
         metric,
-        metric_token,
         dither,
         no_dither,
-        dither_token,
         strength,
         matte,
         exhaustive_background,
@@ -408,6 +407,29 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
         force,
         report,
     })))
+}
+
+/// The CLI token for a metric (the report's `options.metric` echoes it).
+fn metric_token(metric: Metric) -> &'static str {
+    match metric {
+        Metric::OkLab => "oklab",
+        Metric::WeightedRgb => "weighted-rgb",
+        Metric::Yuv => "yuv",
+    }
+}
+
+/// The CLI token for a dither selection (the report's `options.dither`
+/// echoes it).
+fn dither_token(dither: DitherMode, no_dither: bool) -> &'static str {
+    if no_dither {
+        return "none";
+    }
+    match dither {
+        DitherMode::Bayer4 => "ordered4",
+        DitherMode::Bayer8 => "ordered8",
+        DitherMode::FloydSteinberg => "fs",
+        DitherMode::Atkinson => "atkinson",
+    }
 }
 
 /// Parse `rrggbb` (optional leading `#`) into an RGB triple.
@@ -459,9 +481,13 @@ enum PaletteSection {
     Generated { gamut_bits: u8, colours: Vec<Rgb> },
 }
 
+/// A conversion's resolved palette: the interpretation name (`None` for
+/// generated gamut palettes) and the colours.
+type ResolvedPalette = (Option<String>, Vec<Rgb>);
+
 fn run_image(a: &ImageArgs) -> ExitCode {
     let mut entries: Vec<FileEntry> = Vec::with_capacity(a.inputs.len());
-    let mut generated_palette: Option<Vec<Rgb>> = None;
+    let mut first_palette: Option<ResolvedPalette> = None;
 
     for input in &a.inputs {
         let native = a
@@ -470,13 +496,13 @@ fn run_image(a: &ImageArgs) -> ExitCode {
             .map_or_else(|| default_output(input, a.format), PathBuf::from);
         let preview = a.preview.clone().map(PathBuf::from);
         let (entry, palette) = process_file(input, &native, preview.as_deref(), a);
-        if generated_palette.is_none() {
-            generated_palette = palette;
+        if first_palette.is_none() {
+            first_palette = palette;
         }
         entries.push(entry);
     }
 
-    let palette_section = palette_section(a, generated_palette);
+    let palette_section = palette_section(a, first_palette);
     let report = render_report(a, &palette_section, &entries);
 
     let ok = entries.iter().filter(|e| e.ok).count();
@@ -529,14 +555,15 @@ fn exit_code(entries: &[FileEntry]) -> u8 {
     }
 }
 
-/// Convert one input end to end. Returns the report entry plus the resolved
-/// conversion palette (used for the report's generated-palette colours).
+/// Convert one input end to end. Returns the report entry plus the
+/// conversion's resolved palette — its interpretation name (`None` for
+/// generated) and colours — for the report's palette section.
 fn process_file(
     input: &str,
     native_out: &Path,
     preview_out: Option<&Path>,
     a: &ImageArgs,
-) -> (FileEntry, Option<Vec<Rgb>>) {
+) -> (FileEntry, Option<ResolvedPalette>) {
     let mut entry = FileEntry::new(input);
 
     // No-clobber check first, before any conversion work.
@@ -603,7 +630,7 @@ fn process_file(
             .push("input appears already constrained".to_owned());
     }
     entry.quality = Some((conv.report.mean_error, conv.report.cells_over_threshold));
-    let palette = Some(conv.palette.clone());
+    let palette = Some((conv.interpretation.clone(), conv.palette.clone()));
 
     let native_bytes = match encode_native(&conv, a.format) {
         Ok(b) => b,
@@ -744,18 +771,24 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Resolve the report's top-level palette object. Named palettes are the
-/// fixed machine interpretation (the same for every input); generated
-/// palettes are per image, so the colours echo the first successful
-/// conversion (empty when none succeeded).
-fn palette_section(a: &ImageArgs, generated: Option<Vec<Rgb>>) -> PaletteSection {
-    match mediaspec::machine(&a.machine).map(|m| &m.palette) {
+/// Resolve the report's top-level palette object from the first
+/// conversion's resolved palette: named palettes echo its interpretation
+/// name and colours (falling back to the spec's pinned default when no
+/// conversion ran); generated palettes are per image, so the colours echo
+/// the first successful conversion (empty when none succeeded).
+fn palette_section(a: &ImageArgs, conv: Option<ResolvedPalette>) -> PaletteSection {
+    let spec = mediaspec::machine(&a.machine);
+    match spec.map(|m| &m.palette) {
         Some(PaletteModel::Gamut { bits_per_gun }) => PaletteSection::Generated {
             gamut_bits: *bits_per_gun,
-            colours: generated.unwrap_or_default(),
+            colours: conv.map(|(_, colours)| colours).unwrap_or_default(),
         },
         Some(PaletteModel::Fixed(_)) | None => {
-            let spec = mediaspec::machine(&a.machine);
+            if let Some((Some(name), colours)) = conv {
+                return PaletteSection::Named { name, colours };
+            }
+            // No conversion resolved a palette (every input failed first):
+            // derive the same name and colours from the spec.
             let name = a
                 .palette
                 .clone()
@@ -850,12 +883,22 @@ fn render_report(a: &ImageArgs, palette: &PaletteSection, entries: &[FileEntry])
     s.push_str("  },\n");
 
     s.push_str("  \"options\": {\n");
-    s.push_str(&format!("    \"metric\": \"{}\",\n", a.metric_token));
-    s.push_str(&format!("    \"dither\": \"{}\",\n", a.dither_token));
+    s.push_str(&format!(
+        "    \"metric\": \"{}\",\n",
+        metric_token(a.metric)
+    ));
+    s.push_str(&format!(
+        "    \"dither\": \"{}\",\n",
+        dither_token(a.dither, a.no_dither)
+    ));
     s.push_str(&format!("    \"strength\": {},\n", a.strength));
     s.push_str(&format!(
-        "    \"matte\": \"{:02x}{:02x}{:02x}\",\n",
-        a.matte[0], a.matte[1], a.matte[2]
+        "    \"matte\": \"{}\",\n",
+        hex_colour(Rgb {
+            r: a.matte[0],
+            g: a.matte[1],
+            b: a.matte[2]
+        })
     ));
     s.push_str(&format!("    \"force\": {}\n", a.force));
     s.push_str("  },\n");

@@ -4,7 +4,7 @@
 //! cites, so a drift in the spec data is caught against the documented
 //! value, not against itself.
 
-use mediaspec::{ConstraintRule, PaletteModel, Ratio, default_interpretation, machine, rgb};
+use mediaspec::{ConstraintRule, PaletteModel, Ratio, machine, rgb};
 
 /// Spectrum paper is 256×192 with 32×24 cells of 8×8
 /// (`syntheses/zx-spectrum/screen-and-attribute-memory.md` §§ 1, 6).
@@ -134,11 +134,9 @@ fn amiga_ocs_modes_and_gamut() {
 /// on the gamut machine.
 #[test]
 fn default_interpretations_pinned_to_emu198x_v1() {
-    assert_eq!(
-        default_interpretation("sinclair-zx-spectrum"),
-        Some("emu198x-v1")
-    );
-    assert_eq!(default_interpretation("commodore-c64"), Some("emu198x-v1"));
-    assert_eq!(default_interpretation("commodore-amiga-ocs"), None);
-    assert_eq!(default_interpretation("no-such-machine"), None);
+    let pinned = |id: &str| machine(id).and_then(|m| m.default_interpretation);
+    assert_eq!(pinned("sinclair-zx-spectrum"), Some("emu198x-v1"));
+    assert_eq!(pinned("commodore-c64"), Some("emu198x-v1"));
+    assert_eq!(pinned("commodore-amiga-ocs"), None);
+    assert_eq!(pinned("no-such-machine"), None);
 }

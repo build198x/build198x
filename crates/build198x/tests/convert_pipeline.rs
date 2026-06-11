@@ -9,13 +9,8 @@ use build198x::convert::pipeline::{CellChoice, Options, convert};
 use image::{DynamicImage, RgbImage};
 use mediaspec::Rgb;
 
-fn palette_of(machine: &str) -> &'static [Rgb] {
-    mediaspec::machine(machine)
-        .expect("machine exists")
-        .default_palette()
-        .expect("default palette pinned")
-        .colours
-}
+mod common;
+use common::palette_of;
 
 /// Build an image by mapping a per-pixel palette index to its exact RGB.
 fn image_of_indices(

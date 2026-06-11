@@ -55,8 +55,6 @@ pub const WIDTH: usize = 320;
 pub const HEIGHT: usize = 200;
 /// Cells per cell row.
 pub const CELL_COLUMNS: usize = 40;
-/// Cell rows.
-pub const CELL_ROWS: usize = 25;
 
 /// Offset *within the bitmap section* of the byte holding pixel `(x, y)`,
 /// `x` in 0..320, `y` in 0..200. Cell-major VIC-II fetch order (see module

@@ -58,8 +58,6 @@ pub const WIDTH: usize = 160;
 pub const HEIGHT: usize = 200;
 /// Cells per cell row.
 pub const CELL_COLUMNS: usize = 40;
-/// Cell rows.
-pub const CELL_ROWS: usize = 25;
 
 /// Offset *within the bitmap section* of the byte holding multicolour pixel
 /// `(x, y)`, `x` in 0..160, `y` in 0..200. Cell-major VIC-II fetch order

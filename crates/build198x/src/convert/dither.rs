@@ -83,12 +83,16 @@ pub fn bayer_threshold(mode: DitherMode, x: usize, y: usize) -> f32 {
 
 /// Render a cell-constrained image to palette indices: each pixel draws
 /// only from its cell's `allowed` colour list (sorted ascending palette
-/// index). `strength` 0 = nearest colour within the cell; otherwise the
-/// best linear-space mix is thresholded against the Bayer matrix (see the
-/// module docs for the strength mapping).
+/// index). `projected` holds the image's pixels already metric-projected,
+/// row-major `width × height`. `strength` 0 = nearest colour within the
+/// cell; otherwise the best linear-space mix is thresholded against the
+/// Bayer matrix (see the module docs for the strength mapping).
 #[must_use]
+#[allow(clippy::too_many_arguments)] // One knob per documented dither input.
 pub fn render_cells(
-    img: &LinearImage,
+    projected: &[[f32; 3]],
+    width: usize,
+    height: usize,
     searcher: &CellSearcher,
     allowed: &[Vec<u8>],
     cell_w: usize,
@@ -96,8 +100,6 @@ pub fn render_cells(
     mode: DitherMode,
     strength: u8,
 ) -> Vec<u8> {
-    let width = img.width as usize;
-    let height = img.height as usize;
     let cells_per_row = width / cell_w;
     let strength_t = f32::from(strength) / 64.0;
 
@@ -106,7 +108,7 @@ pub fn render_cells(
         for x in 0..width {
             let cell = (y / cell_h) * cells_per_row + x / cell_w;
             let colours = &allowed[cell];
-            let proj = searcher.pal.metric.project(img.pixels[y * width + x]);
+            let proj = projected[y * width + x];
             out[y * width + x] = if strength == 0 {
                 nearest_of(&searcher.pal, proj, colours)
             } else {

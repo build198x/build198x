@@ -2,10 +2,11 @@
 //!
 //! The heart of the converter: for each attribute cell, enumerate the colour
 //! sets the hardware rule allows and score each against the **original
-//! linear pixels** with **mixing-aware** error — a candidate set's error for
-//! a pixel is the minimum metric distance over every ordered-dither mix the
-//! set can achieve (Yliluoma-style: for a colour pair `(a, b)`, mix levels
-//! `k/8` for `k` in `0..=8`, mixed in linear space, then projected). Scoring
+//! pixels** (metric-projected once by the pipeline) with **mixing-aware**
+//! error — a candidate set's error for a pixel is the minimum metric
+//! distance over every ordered-dither mix the set can achieve
+//! (Yliluoma-style: for a colour pair `(a, b)`, mix levels `k/8` for `k` in
+//! `0..=8`, mixed in linear space, then projected). Scoring
 //! against nearest-single-colour would kill dithering in out-of-gamut
 //! regions: a uniform orange cell on the Spectrum must prefer a red+yellow
 //! pair (whose k≈3 mix lands on orange) over any flat single colour.
@@ -19,7 +20,6 @@
 
 use mediaspec::Rgb;
 
-use super::LinearImage;
 use super::colour::{Metric, srgb8_to_linear};
 
 /// Number of mix steps between a colour pair: mix fractions are `k /
@@ -34,6 +34,29 @@ pub const MIX_LEVELS: usize = 8;
 /// triples. 8 keeps the per-cell search at 56 triples while comfortably
 /// covering the colours a 4×8 cell can use.
 pub const MULTI_PRUNE_K: usize = 8;
+
+/// The minimum metric distance from `p` to any projection in `row`
+/// (strict `<` scan in row order — the earliest minimum wins, per the
+/// contract's tie-break rules).
+fn min_dist_sq(metric: Metric, p: [f32; 3], row: &[[f32; 3]]) -> f32 {
+    let mut best = f32::INFINITY;
+    for &m in row {
+        let d = metric.distance_sq(p, m);
+        if d < best {
+            best = d;
+        }
+    }
+    best
+}
+
+/// Flat index of the unordered pair `(i, j)`, `i <= j < n`, in the
+/// upper-triangle-with-diagonal layout. Row `i` starts after rows `0..i`,
+/// which hold `n, n-1, …` entries: offset = `i·(2n − i + 1)/2` (always an
+/// even product, no underflow).
+fn tri_index(n: usize, i: usize, j: usize) -> usize {
+    debug_assert!(i <= j && j < n);
+    i * (2 * n - i + 1) / 2 + (j - i)
+}
 
 /// A resolved palette with its linear and metric-projected forms
 /// precomputed.
@@ -146,7 +169,6 @@ pub struct MultiChoice {
 pub struct CellSearcher {
     /// The palette this searcher scores against.
     pub pal: PaletteData,
-    n: usize,
     /// `mixes[pair_index(i, j)][k]` = metric projection of the linear-space
     /// mix `lerp(linear[i], linear[j], k / MIX_LEVELS)`.
     mixes: Vec<[[f32; 3]; MIX_LEVELS + 1]>,
@@ -177,17 +199,14 @@ impl CellSearcher {
                 mixes.push(row);
             }
         }
-        Self { pal, n, mixes }
+        Self { pal, mixes }
     }
 
     /// Flat index of the unordered pair `(i, j)`, `i <= j`, in the
     /// upper-triangle-with-diagonal layout.
     #[must_use]
     pub fn pair_index(&self, i: usize, j: usize) -> usize {
-        debug_assert!(i <= j && j < self.n);
-        // Row i starts after rows 0..i, which hold n, n-1, … entries:
-        // offset = i·(2n − i + 1)/2 (always even product, no underflow).
-        i * (2 * self.n - i + 1) / 2 + (j - i)
+        tri_index(self.pal.len(), i, j)
     }
 
     /// The precomputed mix projections for pair `(i, j)`, `i <= j`.
@@ -196,19 +215,13 @@ impl CellSearcher {
         &self.mixes[self.pair_index(usize::from(i), usize::from(j))]
     }
 
-    /// A pixel's mixing-aware error against pair `(i, j)`: the minimum
-    /// metric distance over the pair's `MIX_LEVELS + 1` mixes.
-    #[must_use]
-    pub fn pixel_pair_error(&self, pixel_proj: [f32; 3], i: u8, j: u8) -> f32 {
-        let row = self.mix_projections(i, j);
-        let mut best = f32::INFINITY;
-        for &m in row {
-            let d = self.pal.metric.distance_sq(pixel_proj, m);
-            if d < best {
-                best = d;
-            }
-        }
-        best
+    /// The mix-projection row for pair `(a, b)`, `a <= b`, narrowed to a
+    /// single entry for solid pairs: every mix of `(a, a)` is `a` itself
+    /// (bitwise — `a + (a − a)·t` is exactly `a`), so one distance stands
+    /// in for the min over nine identical ones.
+    fn mix_row(&self, a: u8, b: u8) -> &[[f32; 3]] {
+        let row = self.mix_projections(a, b);
+        if a == b { &row[..1] } else { &row[..] }
     }
 
     /// A whole cell's mixing-aware error against pair `(a, b)` (`a <= b`),
@@ -216,17 +229,10 @@ impl CellSearcher {
     /// `abort_above` (a deterministic prune: it depends only on the data
     /// and the fixed enumeration order, never on timing).
     fn pair_cell_score(&self, projs: &[[f32; 3]], a: u8, b: u8, abort_above: f32) -> Option<f32> {
-        let row = self.mix_projections(a, b);
+        let row = self.mix_row(a, b);
         let mut sum = 0.0f32;
         for &p in projs {
-            let mut best = f32::INFINITY;
-            for &m in row {
-                let d = self.pal.metric.distance_sq(p, m);
-                if d < best {
-                    best = d;
-                }
-            }
-            sum += best;
+            sum += min_dist_sq(self.pal.metric, p, row);
             if sum > abort_above {
                 return None;
             }
@@ -234,9 +240,25 @@ impl CellSearcher {
         Some(sum)
     }
 
-    /// Project every cell pixel into metric space.
-    fn project_cell(&self, cell: &[[f32; 3]]) -> Vec<[f32; 3]> {
-        cell.iter().map(|&p| self.pal.metric.project(p)).collect()
+    /// Scan every unordered pair (singles included) from `set` in
+    /// lexicographic position order, mixing-aware, pruning against and
+    /// updating `best_score` with strict `<` (the first candidate in
+    /// enumeration order wins ties — and an incumbent score from an earlier
+    /// set survives equal challengers). Returns the winning pair when any
+    /// candidate improved on the incoming score.
+    fn best_pair(&self, projs: &[[f32; 3]], set: &[u8], best_score: &mut f32) -> Option<(u8, u8)> {
+        let mut best = None;
+        for (i, &a) in set.iter().enumerate() {
+            for &b in &set[i..] {
+                if let Some(score) = self.pair_cell_score(projs, a, b, *best_score)
+                    && score < *best_score
+                {
+                    *best_score = score;
+                    best = Some((a, b));
+                }
+            }
+        }
+        best
     }
 
     /// Split a winning pair into (majority, minority) roles: the colour
@@ -260,8 +282,8 @@ impl CellSearcher {
         }
     }
 
-    /// Exhaustive Spectrum attribute search for one 8×8 cell (64 linear
-    /// pixels, row-major within the cell).
+    /// Exhaustive Spectrum attribute search for one 8×8 cell (64
+    /// metric-projected pixels, row-major within the cell).
     ///
     /// Enumeration order (stable, documented per the contract): the normal
     /// brightness state first, then bright. Within a state, all unordered
@@ -273,58 +295,43 @@ impl CellSearcher {
     /// PAPER takes the cell's majority colour (ties to the lower index);
     /// INK the other. Returns the winning choice and its summed cell error.
     #[must_use]
-    pub fn spectrum(&self, cell: &[[f32; 3]]) -> (SpectrumChoice, f32) {
+    pub fn spectrum(&self, projs: &[[f32; 3]]) -> (SpectrumChoice, f32) {
         const NORMAL: [u8; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
         const BRIGHT: [u8; 8] = [0, 9, 10, 11, 12, 13, 14, 15];
 
-        let projs = self.project_cell(cell);
         let mut best = (0u8, 0u8, false);
         let mut best_score = f32::INFINITY;
         for (bright, set) in [(false, NORMAL), (true, BRIGHT)] {
-            for (i, &a) in set.iter().enumerate() {
-                for &b in &set[i..] {
-                    if let Some(score) = self.pair_cell_score(&projs, a, b, best_score)
-                        && score < best_score
-                    {
-                        best_score = score;
-                        best = (a, b, bright);
-                    }
-                }
+            if let Some((a, b)) = self.best_pair(projs, &set, &mut best_score) {
+                best = (a, b, bright);
             }
         }
         let (a, b, bright) = best;
-        let (paper, ink) = self.majority_roles(&projs, a, b);
+        let (paper, ink) = self.majority_roles(projs, a, b);
         (SpectrumChoice { ink, paper, bright }, best_score)
     }
 
-    /// Exhaustive C64 hires search for one 8×8 cell: all 136 unordered
-    /// pairs (singles included) from the 16-colour palette, in
-    /// lexicographic `(i, j)` order, mixing-aware, strict `<` selection
-    /// (first candidate wins ties). The clear-bit colour (`bg`) takes the
-    /// cell's majority colour. Returns the winning choice and its summed
-    /// cell error.
+    /// Exhaustive C64 hires search for one 8×8 cell (64 metric-projected
+    /// pixels): all 136 unordered pairs (singles included) from the
+    /// 16-colour palette, in lexicographic `(i, j)` order, mixing-aware,
+    /// strict `<` selection (first candidate wins ties). The clear-bit
+    /// colour (`bg`) takes the cell's majority colour. Returns the winning
+    /// choice and its summed cell error.
     #[must_use]
-    pub fn c64_hires(&self, cell: &[[f32; 3]]) -> (HiresChoice, f32) {
-        let projs = self.project_cell(cell);
-        let n = u8::try_from(self.n).unwrap_or(u8::MAX);
-        let mut best = (0u8, 0u8);
+    pub fn c64_hires(&self, projs: &[[f32; 3]]) -> (HiresChoice, f32) {
+        let n = u8::try_from(self.pal.len()).unwrap_or(u8::MAX);
+        let all: Vec<u8> = (0..n).collect();
         let mut best_score = f32::INFINITY;
-        for a in 0..n {
-            for b in a..n {
-                if let Some(score) = self.pair_cell_score(&projs, a, b, best_score)
-                    && score < best_score
-                {
-                    best_score = score;
-                    best = (a, b);
-                }
-            }
-        }
-        let (bg, fg) = self.majority_roles(&projs, best.0, best.1);
+        let (a, b) = self
+            .best_pair(projs, &all, &mut best_score)
+            .unwrap_or((0, 0));
+        let (bg, fg) = self.majority_roles(projs, a, b);
         (HiresChoice { fg, bg }, best_score)
     }
 
-    /// C64 multicolour search for one 4×8 cell (32 double-wide linear
-    /// pixels, row-major) given the global `background`.
+    /// C64 multicolour search for one 4×8 cell (32 double-wide
+    /// metric-projected pixels, row-major, with each pixel's nearest
+    /// palette index alongside) given the global `background`.
     ///
     /// Deterministic pruning (documented per the plan, "single-colour
     /// frequency/error fit"): rank the 15 non-background colours by, in
@@ -341,8 +348,13 @@ impl CellSearcher {
     /// palette index into the %01/%10/%11 slots) and its summed cell
     /// error.
     #[must_use]
-    pub fn c64_multi(&self, cell: &[[f32; 3]], background: u8) -> (MultiChoice, f32) {
-        let projs = self.project_cell(cell);
+    pub fn c64_multi(
+        &self,
+        projs: &[[f32; 3]],
+        nearest: &[u8],
+        background: u8,
+    ) -> (MultiChoice, f32) {
+        let n = self.pal.len();
         let bg_dist: Vec<f32> = projs
             .iter()
             .map(|&p| {
@@ -353,14 +365,14 @@ impl CellSearcher {
             .collect();
 
         // Per-colour nearest-pixel frequency (lowest index wins a
-        // nearest-distance tie, via PaletteData::nearest).
-        let mut freq = vec![0usize; self.n];
-        for &p in &projs {
-            freq[usize::from(self.pal.nearest(p))] += 1;
+        // nearest-distance tie, via the precomputed nearest-index map).
+        let mut freq = vec![0usize; n];
+        for &c in nearest {
+            freq[usize::from(c)] += 1;
         }
 
         // Rank non-background colours: frequency desc, fit cost asc, index.
-        let mut ranked: Vec<(usize, f32, u8)> = (0..self.n)
+        let mut ranked: Vec<(usize, f32, u8)> = (0..n)
             .filter_map(|c| {
                 let ci = u8::try_from(c).ok()?;
                 if ci == background {
@@ -391,26 +403,16 @@ impl CellSearcher {
             .chain(cands.iter().copied())
             .collect();
         let m = involved.len();
-        let pos_pair = |p: usize, q: usize| p * (2 * m - p + 1) / 2 + (q - p);
         let mut cache: Vec<Vec<f32>> = Vec::with_capacity(m * (m + 1) / 2);
         for p in 0..m {
             for q in p..m {
                 let a = involved[p].min(involved[q]);
                 let b = involved[p].max(involved[q]);
-                let row = self.mix_projections(a, b);
+                let row = self.mix_row(a, b);
                 cache.push(
                     projs
                         .iter()
-                        .map(|&px| {
-                            let mut best = f32::INFINITY;
-                            for &mx in row {
-                                let d = self.pal.metric.distance_sq(px, mx);
-                                if d < best {
-                                    best = d;
-                                }
-                            }
-                            best
-                        })
+                        .map(|&px| min_dist_sq(self.pal.metric, px, row))
                         .collect(),
                 );
             }
@@ -425,10 +427,13 @@ impl CellSearcher {
             for y in (x + 1)..k {
                 for z in (y + 1)..k {
                     let positions = [0, x + 1, y + 1, z + 1];
-                    let mut pair_rows: Vec<&[f32]> = Vec::with_capacity(10);
+                    // 4 positions ⇒ exactly 10 unordered pairs.
+                    let mut pair_rows: [&[f32]; 10] = [&[]; 10];
+                    let mut slot = 0;
                     for (pi, &p) in positions.iter().enumerate() {
                         for &q in &positions[pi..] {
-                            pair_rows.push(&cache[pos_pair(p, q)]);
+                            pair_rows[slot] = &cache[tri_index(m, p, q)];
+                            slot += 1;
                         }
                     }
                     let mut sum = 0.0f32;
@@ -499,7 +504,7 @@ impl CellSearcher {
         let mut best_d = f32::INFINITY;
         for (ai, &a) in allowed.iter().enumerate() {
             for &b in &allowed[ai..] {
-                let row = self.mix_projections(a, b);
+                let row = self.mix_row(a, b);
                 for (k, &m) in row.iter().enumerate() {
                     let d = self.pal.metric.distance_sq(pixel_proj, m);
                     if d < best_d {
@@ -514,14 +519,15 @@ impl CellSearcher {
 }
 
 /// Choose the global C64 multicolour background by the deterministic
-/// histogram heuristic: map every image pixel to its nearest palette colour
-/// (lowest index on ties), count, and return the most frequent index —
+/// histogram heuristic over a precomputed per-pixel nearest-palette-index
+/// map (each entry already the lowest index on equal distance, via
+/// [`PaletteData::nearest`]): count, and return the most frequent index —
 /// lowest index on equal counts.
 #[must_use]
-pub fn choose_background(img: &LinearImage, pal: &PaletteData) -> u8 {
-    let mut counts = vec![0usize; pal.len()];
-    for &p in &img.pixels {
-        counts[usize::from(pal.nearest(pal.metric.project(p)))] += 1;
+pub fn choose_background(nearest: &[u8], n_colours: usize) -> u8 {
+    let mut counts = vec![0usize; n_colours];
+    for &c in nearest {
+        counts[usize::from(c)] += 1;
     }
     let mut best = 0usize;
     let mut best_count = 0usize;
