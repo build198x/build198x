@@ -1,0 +1,36 @@
+{
+  "converter_version": "0.1.0",
+  "mediaspec_version": "0.1.0",
+  "machine": "commodore-amiga-ocs",
+  "mode": "lores-pal",
+  "format": "ilbm",
+  "palette": {
+    "kind": "generated",
+    "gamut_bits": 4,
+    "colours": ["000000", "0000ff", "00ff00", "110033", "1133cc", "1188ee", "11eeff", "2200dd", "222266", "2255bb", "33bbcc", "33eecc", "664499", "774488", "885555", "885577", "889999", "88ccaa", "998866", "aadd66", "ee6611", "ee9911", "eeeeee", "eeff11", "ff00ff"]
+  },
+  "options": {
+    "metric": "oklab",
+    "dither": "fs",
+    "strength": 32,
+    "matte": "000000",
+    "force": true,
+    "exhaustive_background": false
+  },
+  "files": [
+    {
+      "input": "crates/build198x/tests/fixtures/emu-smoke/source.png",
+      "status": "ok",
+      "outputs": ["crates/build198x/tests/fixtures/emu-smoke/smoke.iff"],
+      "warnings": [],
+      "quality": {
+        "mean_error": 0.002995,
+        "cells_over_threshold": 0
+      }
+    }
+  ],
+  "summary": {
+    "ok": 1,
+    "failed": 0
+  }
+}

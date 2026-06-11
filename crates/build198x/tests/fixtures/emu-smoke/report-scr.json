@@ -1,0 +1,36 @@
+{
+  "converter_version": "0.1.0",
+  "mediaspec_version": "0.1.0",
+  "machine": "sinclair-zx-spectrum",
+  "mode": "standard",
+  "format": "scr",
+  "palette": {
+    "kind": "named",
+    "name": "emu198x-v1",
+    "colours": ["000000", "0000c2", "c20000", "c200c2", "00c200", "00c2c2", "c2c200", "c2c2c2", "000000", "0000ff", "ff0000", "ff00ff", "00ff00", "00ffff", "ffff00", "ffffff"]
+  },
+  "options": {
+    "metric": "oklab",
+    "dither": "ordered8",
+    "strength": 32,
+    "matte": "000000",
+    "force": true,
+    "exhaustive_background": false
+  },
+  "files": [
+    {
+      "input": "crates/build198x/tests/fixtures/emu-smoke/source.png",
+      "status": "ok",
+      "outputs": ["crates/build198x/tests/fixtures/emu-smoke/smoke.scr"],
+      "warnings": [],
+      "quality": {
+        "mean_error": 0.003024,
+        "cells_over_threshold": 148
+      }
+    }
+  ],
+  "summary": {
+    "ok": 1,
+    "failed": 0
+  }
+}

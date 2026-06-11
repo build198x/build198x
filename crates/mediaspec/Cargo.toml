@@ -1,0 +1,14 @@
+# Zero dependencies, by design: Emu198x consumes this crate by pinned git rev
+# to validate its renderers against the spec, and must never inherit the
+# converter's image/palette dependency graph. Binding decision:
+# 198x/decisions/shared-media-spec.md ("Zero dependencies, const Rust").
+[package]
+name = "mediaspec"
+description = "Authored media capability spec for the 198x family — screen modes, constraint rules, and palettes for retro graphics targets."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,60 @@
+name: Release-plz
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release-plz-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  release-plz:
+    name: Release-plz
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          # release-plz needs full history to diff the changelog from the
+          # last tag.
+          fetch-depth: 0
+          # The `release` step below pushes the version tag with this token. A
+          # tag pushed by GITHUB_TOKEN does NOT trigger other workflows, so the
+          # per-org RELEASE_PLZ_TOKEN (a fine-grained PAT) is required for the
+          # tag to fire cargo-dist's release.yml.
+          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Read pinned toolchain
+        id: toolchain
+        run: |
+          channel=$(awk -F'"' '/^channel/{print $2}' rust-toolchain.toml)
+          echo "channel=${channel}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+
+      # Two steps, the release-plz two-command model: release-pr opens/updates
+      # the "chore: release" PR for new commits; release tags any version in
+      # Cargo.toml that isn't yet tagged (i.e. once that PR is merged) and the
+      # tag push fires cargo-dist's release.yml.
+      - name: Run release-plz (open/update release PR)
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Run release-plz (tag merged releases)
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}

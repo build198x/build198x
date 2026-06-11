@@ -1,0 +1,9 @@
+# The workspace denies clippy::unwrap_used and clippy::dbg_macro so production
+# code never panics on a None/Err or ships a stray dbg!. Tests are exempt:
+# unwrap/expect/dbg are the normal, readable idiom in test bodies, where a panic
+# *is* the failure signal. (The exemption shape is Cat198x's proven adaptation —
+# see cat198x/decisions/skeleton-lint-adaptations.md; Build198x adopts it from
+# day one so test code never accretes workarounds.)
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-dbg-in-tests = true
