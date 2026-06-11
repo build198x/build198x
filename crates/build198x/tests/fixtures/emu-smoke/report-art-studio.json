@@ -1,0 +1,35 @@
+{
+  "converter_version": "0.1.0",
+  "mediaspec_version": "0.1.0",
+  "machine": "commodore-c64",
+  "mode": "hires-bitmap",
+  "format": "art-studio",
+  "palette": {
+    "kind": "named",
+    "name": "emu198x-v1",
+    "colours": ["000000", "ffffff", "883932", "67b6bd", "8b3f96", "55a049", "40318d", "bfce72", "8b5429", "574200", "b86962", "505050", "787878", "94e089", "7868c0", "9f9f9f"]
+  },
+  "options": {
+    "metric": "oklab",
+    "dither": "ordered8",
+    "strength": 32,
+    "matte": "000000",
+    "force": true
+  },
+  "files": [
+    {
+      "input": "crates/build198x/tests/fixtures/emu-smoke/source.png",
+      "status": "ok",
+      "outputs": ["crates/build198x/tests/fixtures/emu-smoke/smoke.art"],
+      "warnings": [],
+      "quality": {
+        "mean_error": 0.010384,
+        "cells_over_threshold": 441
+      }
+    }
+  ],
+  "summary": {
+    "ok": 1,
+    "failed": 0
+  }
+}
