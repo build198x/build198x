@@ -6,8 +6,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-# Minimal binary stub: the CLI proper (subcommands, pipeline wiring) arrives
-# in a later unit. No third-party dependencies yet, by design.
+# Lib + bin crate: the library carries the format codec modules (src/format/,
+# per decisions/module-and-crate-naming.md); the binary stays a minimal stub
+# until the CLI unit (subcommands, pipeline wiring). No third-party
+# dependencies yet, by design.
 
 [lints]
 workspace = true
