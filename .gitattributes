@@ -1,0 +1,14 @@
+# LF everywhere: golden fixtures are compared byte-for-byte against
+# generated output (LF), so CRLF checkout translation on Windows breaks
+# them — caught by the cross-platform golden CI job. eol=lf overrides
+# core.autocrlf on Windows runners/checkouts.
+* text=auto eol=lf
+
+# Native-format fixtures are binary even when git's heuristic might not
+# notice (a golden without an early NUL byte would otherwise be eligible
+# for text translation).
+*.scr binary
+*.koa binary
+*.art binary
+*.iff binary
+*.png binary
