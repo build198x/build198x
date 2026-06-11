@@ -37,9 +37,15 @@ git_only = true
 # version-bumped (lockstep) but untagged; only `build198x-vX.Y.Z` drives a
 # release.
 #
-# The workspace has no library crates yet. When a unit adds one under
-# crates/, add a block for it here in the same change:
+# When a unit adds another library crate under crates/, add a block for it
+# here in the same change:
 #
 #   [[package]]
 #   name = "<library-crate>"
 #   git_tag_enable = false
+
+# mediaspec: the authored media capability spec (zero-dep library; Emu198x
+# consumes it by pinned git rev). Bumps in lockstep but never tags.
+[[package]]
+name = "mediaspec"
+git_tag_enable = false
