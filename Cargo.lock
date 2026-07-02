@@ -22,7 +22,7 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "build198x"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "image",
  "mediaspec",
@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "mediaspec"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "miniz_oxide"

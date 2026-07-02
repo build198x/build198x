@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/build198x/build198x/releases/tag/build198x-v0.2.0) - 2026-07-02
+
+### Added
+
+- add the beeper-phrase converter: notation in, audition WAV + phrase asm out (the audio lane's first tool, opened by `decisions/demand-gate-beeper-phrases.md`; calibrated by regenerating Gloaming's hand-authored phrase constants exactly)
+- add `--repeat`: loop-point audition for title-screen phrases
+
+### Fixed
+
+- repair the Release-plz pipeline: the mediaspec path dependency now carries a version requirement (Asm198x's pattern), and this release was cut by hand to replace the v0.1.0 baseline tag, whose manifest release-plz could not package
+
 ## [0.1.0](https://github.com/build198x/build198x/releases/tag/build198x-v0.1.0) - 2026-06-11
 
 ### Added
