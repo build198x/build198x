@@ -13,7 +13,10 @@ repository.workspace = true
 # (subcommands, pipeline wiring).
 
 [dependencies]
-mediaspec = { path = "../mediaspec" }
+# The version requirement rides alongside the path (Asm198x's pattern for
+# its isa crates): release-plz's cargo-package step refuses a bare path dep,
+# and it bumps this requirement in lockstep on each release.
+mediaspec = { path = "../mediaspec", version = "0.1.0" }
 # Decode + DynamicImage only. default-features = false keeps the decoder set
 # explicit (PNG is the byte-identical contract; JPEG/GIF are accepted
 # best-effort — decisions/determinism-contract.md) and keeps `rayon` out:
