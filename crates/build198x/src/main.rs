@@ -80,6 +80,7 @@ fn main() -> ExitCode {
         }
         Some((cmd, rest)) => match cmd.as_str() {
             "image" => image_command(rest),
+            "beeper" => beeper_command(rest),
             "--version" | "-V" => {
                 println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
                 ExitCode::SUCCESS
@@ -1065,6 +1066,191 @@ fn render_report(a: &ImageArgs, palette: &PaletteSection, entries: &[FileEntry])
     s
 }
 
+// --- the beeper subcommand -------------------------------------------------
+
+/// `build198x beeper <input.bpr> [--out-dir <dir>] [--wav] [--asm] [--force]`
+///
+/// Parses a phrase notation file and writes one preview WAV per phrase plus
+/// one assembly file of phrase blocks. With neither `--wav` nor `--asm`,
+/// both are written (the record's "same input, two outputs"). Exit codes
+/// follow the image converter's convention: 2 usage, 3 parse failure,
+/// 4 model failure (pitch/duration out of the routine's range), 5 IO.
+fn beeper_command(args: &[String]) -> ExitCode {
+    let mut input: Option<PathBuf> = None;
+    let mut out_dir: Option<PathBuf> = None;
+    let mut want_wav = false;
+    let mut want_asm = false;
+    let mut force = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--help" | "-h" => {
+                println!("{}", beeper_usage());
+                return ExitCode::SUCCESS;
+            }
+            "--wav" => want_wav = true,
+            "--asm" => want_asm = true,
+            "--force" => force = true,
+            "--out-dir" => {
+                i += 1;
+                let Some(dir) = args.get(i) else {
+                    eprintln!(
+                        "build198x beeper: --out-dir needs a path\n\n{}",
+                        beeper_usage()
+                    );
+                    return ExitCode::from(2);
+                };
+                out_dir = Some(PathBuf::from(dir));
+            }
+            flag if flag.starts_with('-') => {
+                eprintln!(
+                    "build198x beeper: unknown flag `{flag}`\n\n{}",
+                    beeper_usage()
+                );
+                return ExitCode::from(2);
+            }
+            path => {
+                if input.replace(PathBuf::from(path)).is_some() {
+                    eprintln!(
+                        "build198x beeper: one input file only\n\n{}",
+                        beeper_usage()
+                    );
+                    return ExitCode::from(2);
+                }
+            }
+        }
+        i += 1;
+    }
+    let Some(input) = input else {
+        eprintln!(
+            "build198x beeper: an input .bpr file is required\n\n{}",
+            beeper_usage()
+        );
+        return ExitCode::from(2);
+    };
+    if !want_wav && !want_asm {
+        want_wav = true;
+        want_asm = true;
+    }
+    let out_dir = out_dir.unwrap_or_else(|| {
+        input
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    });
+
+    let source = match std::fs::read_to_string(&input) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("build198x beeper: cannot read {}: {e}", input.display());
+            return ExitCode::from(3);
+        }
+    };
+    let phrases = match build198x::beeper::notation::parse(&source) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("build198x beeper: {}: {e}", input.display());
+            return ExitCode::from(3);
+        }
+    };
+    if phrases.is_empty() {
+        eprintln!("build198x beeper: {} contains no phrases", input.display());
+        return ExitCode::from(3);
+    }
+
+    // Plan outputs, then no-clobber check before any work (house rule).
+    let asm_path = out_dir.join(format!(
+        "{}.asm",
+        input
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "phrases".to_owned())
+    ));
+    let mut planned: Vec<PathBuf> = Vec::new();
+    if want_wav {
+        planned.extend(
+            phrases
+                .iter()
+                .map(|p| out_dir.join(format!("{}.wav", p.name))),
+        );
+    }
+    if want_asm {
+        planned.push(asm_path.clone());
+    }
+    if !force {
+        for path in &planned {
+            if path.exists() {
+                eprintln!(
+                    "build198x beeper: {} exists — pass --force to overwrite",
+                    path.display()
+                );
+                return ExitCode::from(5);
+            }
+        }
+    }
+
+    let mut written: Vec<String> = Vec::new();
+    if want_wav {
+        for phrase in &phrases {
+            let bytes = match build198x::beeper::wav::render(phrase) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("build198x beeper: phrase {}: {e}", phrase.name);
+                    return ExitCode::from(4);
+                }
+            };
+            let path = out_dir.join(format!("{}.wav", phrase.name));
+            if let Err(e) = write_atomic(&path, &bytes) {
+                eprintln!("build198x beeper: {e}");
+                return ExitCode::from(5);
+            }
+            written.push(path.display().to_string());
+        }
+    }
+    if want_asm {
+        let block = match build198x::beeper::asm::emit_all(&phrases) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("build198x beeper: {e}");
+                return ExitCode::from(4);
+            }
+        };
+        if let Err(e) = write_atomic(&asm_path, block.as_bytes()) {
+            eprintln!("build198x beeper: {e}");
+            return ExitCode::from(5);
+        }
+        written.push(asm_path.display().to_string());
+    }
+
+    // Report: small, flat, fixed key order, matching the house JSON stance.
+    let phrase_names: Vec<String> = phrases.iter().map(|p| p.name.clone()).collect();
+    println!(
+        "{{\"converter_version\": \"{}\", \"tool\": \"beeper\", \"input\": \"{}\", \"phrases\": {}, \"outputs\": {}}}",
+        env!("CARGO_PKG_VERSION"),
+        json_escape(&input.display().to_string()),
+        json_string_array(&phrase_names),
+        json_string_array(&written),
+    );
+    ExitCode::SUCCESS
+}
+
+fn beeper_usage() -> &'static str {
+    "build198x beeper — Spectrum beeper phrases: notation in, audition WAV + phrase asm out\n\
+     \n\
+     usage:\n\
+     \x20 build198x beeper <input.bpr> [--out-dir <dir>] [--wav] [--asm] [--force]\n\
+     \n\
+     flags:\n\
+     \x20 --out-dir <dir>  where outputs go (default: beside the input)\n\
+     \x20 --wav            write <phrase>.wav previews only\n\
+     \x20 --asm            write <input-stem>.asm phrase blocks only\n\
+     \x20 --force          overwrite existing outputs\n\
+     \n\
+     with neither --wav nor --asm, both are written. The emitted blocks\n\
+     target the Gloaming-style beep/rest routines (B cycles, C delay), which\n\
+     stay hand-written in the curriculum — this tool emits phrases only."
+}
+
 // --- usage ----------------------------------------------------------------
 
 fn top_usage() -> String {
@@ -1072,9 +1258,10 @@ fn top_usage() -> String {
         "{name} — the 198x build-tools pipeline\n\n\
          usage:\n\
          \x20 {name} image <input.png> [more inputs...] --machine <id> --format <f> [options]\n\
+         \x20 {name} beeper <input.bpr> [--out-dir <dir>] [--wav] [--asm] [--force]\n\
          \x20 {name} --version\n\
          \x20 {name} --help\n\n\
-         run `{name} image --help` for the image converter's flags and exit codes.",
+         run `{name} image --help` or `{name} beeper --help` for each converter's flags.",
         name = env!("CARGO_PKG_NAME")
     )
 }

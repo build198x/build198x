@@ -6,11 +6,16 @@
 //! indexed output, bridged into the codecs). The CLI wiring arrives in a
 //! later unit; the binary target stays a stub until then.
 //!
+//! The [`beeper`] module is the audio lane's first tool (opened by
+//! `decisions/demand-gate-beeper-phrases.md`): Spectrum beeper-phrase
+//! notation in, audition WAV + phrase assembly out.
+//!
 //! Module layout and dependency discipline follow
 //! `decisions/module-and-crate-naming.md`: codec modules mirror the crate
 //! names they would become if a second consumer makes a split real, and
 //! they depend on nothing but `core`/`std`; `convert::*` may depend on
-//! `mediaspec` and `image`.
+//! `mediaspec` and `image`; `beeper::*` is `std`-only.
 
+pub mod beeper;
 pub mod convert;
 pub mod format;

@@ -1,0 +1,25 @@
+; Gloaming's three hand-authored phrases, transcribed from
+; code-samples/sinclair-zx-spectrum/assembly/gloaming/prototype/gloaming.asm.
+; The calibration fixture: regenerating these must reproduce the prototype's
+; constants exactly (decisions/demand-gate-beeper-phrases.md § Fidelity rule).
+
+phrase chime_dusk          ; the title — two bell notes, high then low
+  E5  299ms                ; a bright strike
+  rest 8
+  C5  398ms                ; C5 answers, a shade longer
+
+phrase fanfare_held        ; THE NIGHT IS HELD — a rising run
+  C5  250ms
+  rest 3
+  E5  250ms
+  rest 3
+  G5  250ms
+  rest 3
+  C6  487ms                ; held on the top
+
+phrase sting_nightfall     ; NIGHT FALLS — two steps down, then dark
+  E5  125ms
+  rest 4
+  D5  124ms
+  rest 4
+  A4  500ms                ; A4, long — the night settles on it
