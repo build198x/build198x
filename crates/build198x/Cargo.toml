@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 # Lib + bin crate: the library carries the format codec modules (src/format/,
 # per decisions/module-and-crate-naming.md, dependency-free by convention)

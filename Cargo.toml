@@ -22,6 +22,12 @@ edition = "2024"
 version = "0.1.0"
 license = "GPL-2.0-or-later"
 repository = "https://github.com/build198x/build198x"
+# Never published to crates.io (the binary ships via GitHub Releases, and
+# generic crate names shouldn't be claimed) — and this is what makes
+# release-plz skip its cargo-package step, which cannot package the
+# v0.1.0 tag's manifest. release-plz.toml's publish = false only stops
+# the publish itself, not that packaging pass.
+publish = false
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
