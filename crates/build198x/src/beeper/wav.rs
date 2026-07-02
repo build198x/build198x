@@ -38,10 +38,24 @@ enum Segment {
 ///
 /// [`ResolveError`] if any event is outside the routine's range.
 pub fn render(phrase: &Phrase) -> Result<Vec<u8>, ResolveError> {
+    render_repeated(phrase, 1)
+}
+
+/// Render a phrase played `repeats` times back to back — the loop-point
+/// audition (`--repeat`). Preview-only: the emitted assembly is always the
+/// single phrase; looping is the game code's job (call the cell, poll the
+/// keyboard, call it again).
+///
+/// # Errors
+///
+/// [`ResolveError`] if any event is outside the routine's range.
+pub fn render_repeated(phrase: &Phrase, repeats: u32) -> Result<Vec<u8>, ResolveError> {
     // Resolve events into (start_t, end_t, segment) spans.
     let mut segments: Vec<(u64, u64, Segment)> = Vec::new();
     let mut t = 0u64;
-    for event in &phrase.events {
+    let repeated =
+        std::iter::repeat_n(&phrase.events, usize::try_from(repeats).unwrap_or(1)).flatten();
+    for event in repeated {
         match event {
             Event::Note {
                 pitch, duration, ..
@@ -180,5 +194,16 @@ mod tests {
         let a = render(&e5_phrase()).expect("renders");
         let b = render(&e5_phrase()).expect("renders");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn repeated_render_is_proportionally_longer() {
+        let once = render_repeated(&e5_phrase(), 1).expect("renders");
+        let thrice = render_repeated(&e5_phrase(), 3).expect("renders");
+        let once_pcm = (once.len() - 44) as u64;
+        let thrice_pcm = (thrice.len() - 44) as u64;
+        // Within a couple of samples of exactly 3× — the single pass ceils
+        // its tail sample, so 3·ceil(x) can exceed ceil(3x) slightly.
+        assert!((once_pcm * 3).abs_diff(thrice_pcm) <= 6);
     }
 }

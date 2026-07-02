@@ -1081,6 +1081,7 @@ fn beeper_command(args: &[String]) -> ExitCode {
     let mut want_wav = false;
     let mut want_asm = false;
     let mut force = false;
+    let mut repeats: u32 = 1;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -1091,6 +1092,18 @@ fn beeper_command(args: &[String]) -> ExitCode {
             "--wav" => want_wav = true,
             "--asm" => want_asm = true,
             "--force" => force = true,
+            "--repeat" => {
+                i += 1;
+                let parsed = args.get(i).and_then(|n| n.parse::<u32>().ok());
+                let Some(n) = parsed.filter(|n| (1..=100).contains(n)) else {
+                    eprintln!(
+                        "build198x beeper: --repeat needs a count 1-100\n\n{}",
+                        beeper_usage()
+                    );
+                    return ExitCode::from(2);
+                };
+                repeats = n;
+            }
             "--out-dir" => {
                 i += 1;
                 let Some(dir) = args.get(i) else {
@@ -1192,7 +1205,7 @@ fn beeper_command(args: &[String]) -> ExitCode {
     let mut written: Vec<String> = Vec::new();
     if want_wav {
         for phrase in &phrases {
-            let bytes = match build198x::beeper::wav::render(phrase) {
+            let bytes = match build198x::beeper::wav::render_repeated(phrase, repeats) {
                 Ok(b) => b,
                 Err(e) => {
                     eprintln!("build198x beeper: phrase {}: {e}", phrase.name);
@@ -1245,6 +1258,8 @@ fn beeper_usage() -> &'static str {
      \x20 --wav            write <phrase>.wav previews only\n\
      \x20 --asm            write <input-stem>.asm phrase blocks only\n\
      \x20 --force          overwrite existing outputs\n\
+     \x20 --repeat <n>     play each phrase n times in its WAV (loop-point\n\
+     \x20                  audition; the emitted assembly stays one pass)\n\
      \n\
      with neither --wav nor --asm, both are written. The emitted blocks\n\
      target the Gloaming-style beep/rest routines (B cycles, C delay), which\n\
