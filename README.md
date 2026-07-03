@@ -17,6 +17,8 @@ build198x beeper <input.bpr> [--repeat <n>]                # phrase notation →
 
 Each tool opened on a named concrete need (the demand gate): see [`decisions/demand-gate-opening.md`](decisions/demand-gate-opening.md) and [`decisions/demand-gate-beeper-phrases.md`](decisions/demand-gate-beeper-phrases.md).
 
+A third lane is **booked, not yet built**: the Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE), whose gate fired on Gloaming's cassette packaging — see [`decisions/demand-gate-tape-master.md`](decisions/demand-gate-tape-master.md). It is the first exercise of the media-mastering band and starts as its own build session; the one open dependency is Gloaming's loading-screen art.
+
 ## Install
 
 Prebuilt binaries for each release are on the [Releases page](https://github.com/build198x/build198x/releases) (built by cargo-dist). Nothing here is published to crates.io — the binary is the product.
