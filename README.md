@@ -17,7 +17,7 @@ build198x beeper <input.bpr> [--repeat <n>]                # phrase notation →
 
 Each tool opened on a named concrete need (the demand gate): see [`decisions/demand-gate-opening.md`](decisions/demand-gate-opening.md) and [`decisions/demand-gate-beeper-phrases.md`](decisions/demand-gate-beeper-phrases.md).
 
-A third lane is **booked, not yet built**: the Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE), whose gate fired on Gloaming's cassette packaging — see [`decisions/demand-gate-tape-master.md`](decisions/demand-gate-tape-master.md). It is the first exercise of the media-mastering band and starts as its own build session; the one open dependency is Gloaming's loading-screen art.
+A third lane is **booked, not yet built, and its home is unsettled**: the Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE), whose gate fired on Gloaming's cassette packaging — see [`decisions/demand-gate-tape-master.md`](decisions/demand-gate-tape-master.md). Whether it belongs here (media mastering) or in Asm198x (program framing, next to `.sna`) is an open umbrella-level question. The loading-screen art dependency is resolved either way; the tool build waits on the boundary call.
 
 ## Install
 
