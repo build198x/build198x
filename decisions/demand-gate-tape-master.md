@@ -92,8 +92,8 @@ second artifact joins — a loading screen, an authored loader, another program
 mastering, so this tool proceeds in Build198x, ingesting a raw binary + org
 (no dependency on Asm198x's not-yet-built `.tap` serialiser). The authored
 BASIC loader reuses Emu198x's `format-sinclair-zx-spectrum-bas` tokeniser
-rather than reimplementing (publish path per Emu198x's
-`crate-licensing-split.md`). Steve confirmed loading screens ship on
+rather than reimplementing (frictionless: the family licence is
+GPL-2.0-or-later throughout). Steve confirmed loading screens ship on
 curriculum tapes, so screen support stays in initial scope alongside the
 test-card default.
 
