@@ -1,13 +1,11 @@
 # Decision: the tape master — Gloaming's cassette packaging books the media-mastering lane
 
-**Status:** Booked, **sibling placement provisional** (demand fired
-2026-07-03). Tool not yet started — this record is the gate opening, not the
-build. **Open (Steve, 2026-07-03):** whether tape mastering is truly a
-Build198x *media-mastering* function or an Asm198x *program-framing* function
-is unsettled and TBC — see § "Open: which sibling owns this?" below. The
-Build198x framing here is the working assumption, not a settled call.
+**Status:** Booked, **placement settled: Build198x** (2026-07-08, umbrella
+[`tape-framing-vs-mastering.md`](../../../decisions/tape-framing-vs-mastering.md)).
+Demand fired 2026-07-03. Tool not yet started — this record is the gate
+opening, not the build — but the build is now unblocked.
 
-**Date:** 2026-07-03.
+**Date:** 2026-07-03. Placement resolved 2026-07-08.
 
 ## The decision
 
@@ -83,6 +81,21 @@ program/media seam between them), TBC in a later conversation. Until it
 resolves, no tape code is written in either sibling — the loading-screen art
 (the other dependency) is done regardless, so nothing is blocked by parking
 this.
+
+**Resolved 2026-07-08 — both readings were half-right; the seam splits by
+composition.** Umbrella record:
+[`tape-framing-vs-mastering.md`](../../../decisions/tape-framing-vs-mastering.md).
+A tape whose content is the assembled program and nothing else (including the
+pasmo `--tapbas`-parity minimal stub) is an Asm198x *framing*; the moment a
+second artifact joins — a loading screen, an authored loader, another program
+— it is *mastering*, owned here. Gloaming's loader + SCREEN$ + CODE tape is
+mastering, so this tool proceeds in Build198x, ingesting a raw binary + org
+(no dependency on Asm198x's not-yet-built `.tap` serialiser). The authored
+BASIC loader reuses Emu198x's `format-sinclair-zx-spectrum-bas` tokeniser
+rather than reimplementing (publish path per Emu198x's
+`crate-licensing-split.md`). Steve confirmed loading screens ship on
+curriculum tapes, so screen support stays in initial scope alongside the
+test-card default.
 
 ## Open questions for the build session
 
