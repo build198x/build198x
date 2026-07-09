@@ -17,7 +17,7 @@ build198x beeper <input.bpr> [--repeat <n>]                # phrase notation →
 
 Each tool opened on a named concrete need (the demand gate): see [`decisions/demand-gate-opening.md`](decisions/demand-gate-opening.md) and [`decisions/demand-gate-beeper-phrases.md`](decisions/demand-gate-beeper-phrases.md).
 
-A third lane is **booked, not yet built, and its home is unsettled**: the Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE), whose gate fired on Gloaming's cassette packaging — see [`decisions/demand-gate-tape-master.md`](decisions/demand-gate-tape-master.md). Whether it belongs here (media mastering) or in Asm198x (program framing, next to `.sna`) is an open umbrella-level question. The loading-screen art dependency is resolved either way; the tool build waits on the boundary call.
+A third lane is pending a boundary decision: the Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE). Its demand gate is recorded in [`decisions/demand-gate-tape-master.md`](decisions/demand-gate-tape-master.md); implementation waits until the Build198x/Asm198x ownership call is settled.
 
 ## Install
 
@@ -33,4 +33,4 @@ The wider roster stays demand-gated: each tool starts when its own concrete need
 
 **Native output only, never a bespoke format.** And every tool is validated against reality: format encoders round-trip against reference tools and golden fixtures ([`decisions/validation-tiers.md`](decisions/validation-tiers.md)), contracted conversions are byte-identical across platforms ([`decisions/determinism-contract.md`](decisions/determinism-contract.md)), and the beeper's timing model is proven against hand-authored constants from shipped game code.
 
-Sixth sibling of the 198x family, alongside Code198x, Emu198x, Asm198x, Cat198x, Forge198x, and Play198x.
+Build198x is the build-tools sibling of the 198x family, alongside Code198x, Emu198x, Asm198x, Cat198x, Forge198x, and Play198x.
