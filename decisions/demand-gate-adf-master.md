@@ -219,3 +219,27 @@ the last capability gate before the crates.io publish.
 What remains out — the International/Dir-Cache variants, hard-disk (RDB)
 layouts, and multi-disk sets — is the general-tool roadmap, each its own later
 scope.
+
+## crates.io: the family's first publish (2026-07-10)
+
+With read+write complete, `format-commodore-amiga-adf` becomes the **family's
+first crates.io crate** — the application of the licensing-split decision's
+"publish where there's a plausible consumer" (`Emu198x/.../crate-licensing-
+split.md`). The plausible consumers are real: any Rust Amiga tool or emulator
+(Rust's `adflib` can't write disks), and Emu198x's own floppy read path in time.
+Published **GPL-2.0-or-later**, per that decision (GPL all the way; the crate is
+clean-room from datasheets + a known-good disk, cross-checked against
+public-domain gadf, but the family stance is copyleft regardless).
+
+Publish-ready: `readme`, `keywords`, `categories`, a `//!`-documented API with
+doctests, and `examples/multi_file_disk`; `cargo publish --dry-run` passes; the
+name is free. This lands slightly ahead of the CPU crates the licensing record
+named as the first publishes — no conflict: that ordering was Emu198x-internal,
+and this is a different sibling's clean-room crate with a live consumer.
+
+**Mechanics.** The first publish is **manual and Steve's** (crates.io token +
+final go — outward-facing and irreversible): `cargo publish -p
+format-commodore-amiga-adf`. release-plz stays `publish = false` for now; whether
+to automate future publishes (needs `CARGO_REGISTRY_TOKEN` in CI) is a separate
+call. The `build198x-adf` binary can follow (`cargo install`) once the library
+is up, since it depends on it.

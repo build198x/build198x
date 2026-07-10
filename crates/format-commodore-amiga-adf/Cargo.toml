@@ -7,11 +7,14 @@
 # side lands.
 [package]
 name = "format-commodore-amiga-adf"
-description = "Deterministic, dependency-free Amiga ADF (OFS) disk-image mastering — bootable KS1.x floppies from a hunk executable."
+description = "Deterministic, dependency-free Amiga ADF (OFS/FFS) disk images — read, write, and verify bootable floppies."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["amiga", "adf", "ofs", "ffs", "disk-image"]
+categories = ["filesystem", "encoding", "emulators"]
 
 [lints]
 workspace = true
