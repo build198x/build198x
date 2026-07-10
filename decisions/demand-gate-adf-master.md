@@ -204,6 +204,18 @@ data disks are handled. Verified end-to-end: a two-directory disk (a command in
 cover nested trees, data disks, and empty files; an `examples/multi_file_disk`
 doubles as a crates.io example.
 
+## Read side (2026-07-10)
+
+Added `Disk`: `open` (validate the boot block + root), `filesystem`, `label`,
+`list`, `read` (any path, OFS or FFS), and `verify` (every checksum — boot,
+root, bitmap, headers, extension and OFS data blocks — plus structural sanity).
+It is **panic-free on malformed input**: every block pointer is range-checked
+and every chain is loop-bounded, so a corrupt image yields `Error::Corrupt`, not
+a crash. Round-trip tests assert `Disk::open(Volume::build())` reproduces every
+file for both filesystems. This makes the crate a genuine read+write ADF
+library — which Rust's `adflib` is not (its write is unimplemented) — and clears
+the last capability gate before the crates.io publish.
+
 What remains out — the International/Dir-Cache variants, hard-disk (RDB)
-layouts, multi-disk sets, and the read side — is the general-tool roadmap, each
-its own later scope.
+layouts, and multi-disk sets — is the general-tool roadmap, each its own later
+scope.
