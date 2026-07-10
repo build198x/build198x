@@ -1,6 +1,8 @@
 # ADF read verbs: `verify` and `info`
 
-**Status:** design approved, not yet implemented.
+**Status:** implemented (both twins, 2026-07-10). A general `create` write verb
+— exposing the library's full `Volume` builder (multiple files, directories,
+non-bootable disks) — is the agreed next step and gets its own spec.
 **Scope:** both ADF twins — the standalone `build198x-adf` binary and the
 `build198x adf` pipeline subcommand — kept in lockstep, as they already are for
 `master`.
