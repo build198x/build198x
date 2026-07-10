@@ -1379,6 +1379,7 @@ fn adf_command(args: &[String]) -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("master") => adf_dispatch_master(&args[1..]),
+        Some("create") => adf_create(&args[1..]),
         Some("verify") => adf_verify(&args[1..]),
         Some("info") => adf_info(&args[1..]),
         _ => adf_dispatch_master(args),
@@ -1718,6 +1719,253 @@ fn adf_info_json(
     out
 }
 
+// --- create: the general Volume builder ---
+
+fn adf_create(args: &[String]) -> ExitCode {
+    let (fmt, rest) = match adf_take_format(args) {
+        Ok(v) => v,
+        Err(e) => return adf_verb_arg_error("create", &e),
+    };
+
+    let mut out_path: Option<String> = None;
+    let mut label: Option<String> = None;
+    let mut adds: Vec<(String, String)> = Vec::new();
+    let mut mkdirs: Vec<String> = Vec::new();
+    let mut bootable = false;
+    let mut startup: Option<String> = None;
+    let mut fs = adf::FileSystem::Ofs;
+
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--help" | "-h" => {
+                println!("{}", adf_verb_usage("create"));
+                return ExitCode::SUCCESS;
+            }
+            "--ffs" => fs = adf::FileSystem::Ffs,
+            "--ofs" => fs = adf::FileSystem::Ofs,
+            "--bootable" => bootable = true,
+            "--label" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => label = Some(v.clone()),
+                    None => return adf_verb_arg_error("create", "--label needs a value"),
+                }
+            }
+            "--startup" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => startup = Some(v.clone()),
+                    None => return adf_verb_arg_error("create", "--startup needs a command"),
+                }
+            }
+            "--mkdir" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => mkdirs.push(v.clone()),
+                    None => return adf_verb_arg_error("create", "--mkdir needs a path"),
+                }
+            }
+            "--add" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => match adf_parse_add(v) {
+                        Ok(pair) => adds.push(pair),
+                        Err(e) => return adf_verb_arg_error("create", &e),
+                    },
+                    None => return adf_verb_arg_error("create", "--add needs a host file"),
+                }
+            }
+            other if other.starts_with('-') => {
+                return adf_verb_arg_error("create", &format!("unknown flag `{other}`"));
+            }
+            _ => {
+                if out_path.is_some() {
+                    return adf_verb_arg_error("create", "more than one output path given");
+                }
+                out_path = Some(rest[i].clone());
+            }
+        }
+        i += 1;
+    }
+
+    let Some(out_path) = out_path else {
+        return adf_verb_arg_error("create", "no output path given (<out.adf>)");
+    };
+    let label = label.unwrap_or_else(|| adf_default_label(&out_path));
+    if startup.is_some() {
+        bootable = true; // a startup-sequence only runs on a bootable disk
+    }
+
+    let img = match adf_build_volume(&label, fs, bootable, &mkdirs, &adds, startup.as_deref()) {
+        Ok(img) => img,
+        Err(code) => return code,
+    };
+
+    if let Err(e) = write_atomic(Path::new(&out_path), &img) {
+        eprintln!("build198x adf: {e}");
+        return ExitCode::from(1);
+    }
+
+    let files = adds.len() + usize::from(startup.is_some());
+    let dirs = mkdirs.len();
+    let line = match fmt {
+        AdfFormat::Text => adf_create_text(&out_path, img.len(), fs, &label, bootable, files, dirs),
+        AdfFormat::Json => adf_create_json(&out_path, img.len(), fs, &label, bootable, files, dirs),
+    };
+    println!("{line}");
+    ExitCode::SUCCESS
+}
+
+/// Parse an `--add` spec `host[=dest]`. Without `=`, the destination is the host
+/// basename at the root; a `dest` ending in `/` keeps the basename inside it.
+/// Split on the first `=` so Windows drive-letter host paths survive.
+fn adf_parse_add(spec: &str) -> Result<(String, String), String> {
+    match spec.split_once('=') {
+        Some((host, dest)) => {
+            if host.is_empty() {
+                return Err(format!("--add {spec}: empty host path"));
+            }
+            if dest.is_empty() {
+                return Err(format!("--add {spec}: empty destination"));
+            }
+            let dest = match dest.strip_suffix('/') {
+                Some(dir) => {
+                    let base = adf_host_basename(host);
+                    if dir.is_empty() {
+                        base
+                    } else {
+                        format!("{dir}/{base}")
+                    }
+                }
+                None => dest.to_owned(),
+            };
+            Ok((host.to_owned(), dest))
+        }
+        None => Ok((spec.to_owned(), adf_host_basename(spec))),
+    }
+}
+
+fn adf_host_basename(host: &str) -> String {
+    Path::new(host)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| host.to_owned())
+}
+
+fn adf_default_label(out_path: &str) -> String {
+    let stem = Path::new(out_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut c = stem.chars();
+    match c.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+        None => "Disk".to_owned(),
+    }
+}
+
+/// Read each host file and assemble the volume; any failure maps to `exit 1`.
+fn adf_build_volume(
+    label: &str,
+    fs: adf::FileSystem,
+    bootable: bool,
+    mkdirs: &[String],
+    adds: &[(String, String)],
+    startup: Option<&str>,
+) -> Result<Vec<u8>, ExitCode> {
+    let mut files = Vec::with_capacity(adds.len());
+    for (host, dest) in adds {
+        match std::fs::read(host) {
+            Ok(bytes) => files.push((dest.clone(), bytes)),
+            Err(e) => {
+                eprintln!("build198x adf: cannot read {host}: {e}");
+                return Err(ExitCode::from(1));
+            }
+        }
+    }
+    match adf_assemble_volume(label, fs, bootable, mkdirs, &files, startup) {
+        Ok(img) => Ok(img),
+        Err(e) => {
+            eprintln!("build198x adf: {e}");
+            Err(ExitCode::from(1))
+        }
+    }
+}
+
+/// Build an ADF image from in-memory contents — pure over the library `Volume`,
+/// so it is unit-testable without touching the disk.
+fn adf_assemble_volume(
+    label: &str,
+    fs: adf::FileSystem,
+    bootable: bool,
+    mkdirs: &[String],
+    files: &[(String, Vec<u8>)],
+    startup: Option<&str>,
+) -> Result<Vec<u8>, adf::Error> {
+    let mut vol = adf::Volume::new(label, fs);
+    vol.set_bootable(bootable);
+    for d in mkdirs {
+        vol.add_dir(d)?;
+    }
+    for (dest, bytes) in files {
+        vol.add_file(dest, bytes)?;
+    }
+    if let Some(cmd) = startup {
+        vol.add_file("s/startup-sequence", format!("{cmd}\n").as_bytes())?;
+    }
+    vol.build()
+}
+
+fn adf_create_text(
+    out_path: &str,
+    img_len: usize,
+    fs: adf::FileSystem,
+    label: &str,
+    bootable: bool,
+    files: usize,
+    dirs: usize,
+) -> String {
+    let boot = if bootable { ", bootable" } else { "" };
+    format!(
+        "{out_path}: created — {}K {} \"{label}\", {}, {}{boot}",
+        img_len / 1024,
+        fs.name().to_uppercase(),
+        adf_plural(files, "file"),
+        adf_plural(dirs, "dir"),
+    )
+}
+
+fn adf_create_json(
+    out_path: &str,
+    img_len: usize,
+    fs: adf::FileSystem,
+    label: &str,
+    bootable: bool,
+    files: usize,
+    dirs: usize,
+) -> String {
+    format!(
+        "{{\"tool\":\"adf\",\"command\":\"create\",\"output\":\"{}\",\"filesystem\":\"{}\",\"label\":\"{}\",\"bootable\":{},\"files\":{},\"dirs\":{},\"bytes\":{}}}",
+        json_escape(out_path),
+        fs.name(),
+        json_escape(label),
+        bootable,
+        files,
+        dirs,
+        img_len
+    )
+}
+
+/// `1 file` / `3 files` — singular for one, plural otherwise.
+fn adf_plural(n: usize, word: &str) -> String {
+    if n == 1 {
+        format!("1 {word}")
+    } else {
+        format!("{n} {word}s")
+    }
+}
+
 /// Read a disk file, reporting a read failure as `exit 1` with a diagnostic.
 fn adf_read_disk(path: &str) -> Result<Vec<u8>, ExitCode> {
     match std::fs::read(path) {
@@ -1768,10 +2016,11 @@ fn adf_arg_error(msg: &str) -> ExitCode {
 fn adf_usage() -> String {
     let name = env!("CARGO_PKG_NAME");
     format!(
-        "{name} adf — master, verify, and inspect bootable Amiga ADF floppies\n\n\
+        "{name} adf — master, create, verify, and inspect bootable Amiga ADF floppies\n\n\
          usage:\n\
          \x20 {name} adf <exe> -o <out.adf> [flags]         master (shorthand)\n\
          \x20 {name} adf master <exe> -o <out.adf> [flags]  master a hunk exe into a bootable disk\n\
+         \x20 {name} adf create <out.adf> [flags]           build a volume from files and dirs\n\
          \x20 {name} adf verify <disk.adf>                  check an ADF's integrity\n\
          \x20 {name} adf info <disk.adf>                     show label, filesystem, and contents\n\n\
          Every verb takes --format text|json (default text). Run\n\
@@ -1801,6 +2050,20 @@ fn adf_master_usage() -> String {
 fn adf_verb_usage(verb: &str) -> String {
     let name = env!("CARGO_PKG_NAME");
     match verb {
+        "create" => format!(
+            "{name} adf create — build an ADF volume from files and directories\n\n\
+             usage:\n\
+             \x20 {name} adf create <out.adf> [options]\n\n\
+             options:\n\
+             \x20 --label <name>        volume label (default: capitalised output stem)\n\
+             \x20 --add <host>[=<dest>] add a host file at <dest> (repeatable; dest\n\
+             \x20                       defaults to the basename; a trailing / keeps it)\n\
+             \x20 --mkdir <dest>        create an empty directory (repeatable)\n\
+             \x20 --bootable           write a boot block (default: not bootable)\n\
+             \x20 --startup <cmd>      write s/startup-sequence running <cmd> (implies --bootable)\n\
+             \x20 --ofs | --ffs        filesystem (default: --ofs; --ffs needs KS2.0+)\n\
+             \x20 --format <fmt>       output format: text (default) or json"
+        ),
         "verify" => format!(
             "{name} adf verify — check an ADF's integrity (checksums + structure)\n\n\
              usage:\n\
@@ -1959,6 +2222,80 @@ mod tests {
                 51234
             ),
             "{\"tool\":\"adf\",\"output\":\"flock.adf\",\"volume\":\"Flock\",\"file\":\"flock\",\"filesystem\":\"ofs\",\"bytes\":901120,\"exe_bytes\":51234}"
+        );
+    }
+
+    #[test]
+    fn adf_parse_add_maps_host_to_dest() {
+        assert_eq!(
+            adf_parse_add("mygame").unwrap(),
+            ("mygame".to_owned(), "mygame".to_owned())
+        );
+        assert_eq!(
+            adf_parse_add("boot.exe=c/boot").unwrap(),
+            ("boot.exe".to_owned(), "c/boot".to_owned())
+        );
+        assert_eq!(
+            adf_parse_add("logo.iff=art/").unwrap(),
+            ("logo.iff".to_owned(), "art/logo.iff".to_owned())
+        );
+        assert!(adf_parse_add("=dest").is_err());
+        assert!(adf_parse_add("host=").is_err());
+    }
+
+    #[test]
+    fn adf_default_label_capitalises_the_stem() {
+        assert_eq!(adf_default_label("game.adf"), "Game");
+        assert_eq!(adf_default_label("path/to/cool.adf"), "Cool");
+    }
+
+    #[test]
+    fn adf_assemble_builds_a_verifiable_disk() {
+        let img = adf_assemble_volume(
+            "MyGame",
+            adf::FileSystem::Ofs,
+            true,
+            &["data".to_owned()],
+            &[
+                ("mygame".to_owned(), vec![0u8; 1024]),
+                ("readme".to_owned(), b"hi".to_vec()),
+            ],
+            Some("mygame"),
+        )
+        .unwrap();
+        let disk = adf::Disk::open(&img).unwrap();
+        disk.verify().unwrap();
+        let names: Vec<String> = disk.list("").unwrap().into_iter().map(|e| e.name).collect();
+        assert!(names.contains(&"mygame".to_owned()));
+        assert!(names.contains(&"data".to_owned()));
+        assert!(names.contains(&"s".to_owned()));
+        assert_eq!(disk.read("s/startup-sequence").unwrap(), b"mygame\n");
+    }
+
+    #[test]
+    fn adf_assemble_empty_disk_is_valid() {
+        let img =
+            adf_assemble_volume("Blank", adf::FileSystem::Ofs, false, &[], &[], None).unwrap();
+        let disk = adf::Disk::open(&img).unwrap();
+        disk.verify().unwrap();
+        assert_eq!(disk.label(), "Blank");
+        assert!(disk.list("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn adf_create_needs_an_output_path() {
+        assert_eq!(adf_command(&["create".to_owned()]), ExitCode::from(2));
+    }
+
+    #[test]
+    fn adf_create_output_shapes() {
+        assert_eq!(
+            adf_create_json("game.adf", 901120, adf::FileSystem::Ofs, "Game", true, 3, 2),
+            "{\"tool\":\"adf\",\"command\":\"create\",\"output\":\"game.adf\",\"filesystem\":\"ofs\",\"label\":\"Game\",\"bootable\":true,\"files\":3,\"dirs\":2,\"bytes\":901120}"
+        );
+        assert_eq!(
+            adf_create_text("d.adf", 901120, adf::FileSystem::Ffs, "D", false, 1, 0),
+            "d.adf: created — 880K FFS \"D\", 1 file, 0 dirs"
         );
     }
 
