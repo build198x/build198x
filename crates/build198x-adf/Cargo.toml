@@ -5,7 +5,7 @@
 # standalone twin.
 [package]
 name = "build198x-adf"
-description = "Master an Amiga hunk executable into a bootable ADF floppy (OFS or FFS) — the standalone ADF tool."
+description = "Create, master, verify, and inspect Amiga ADF floppy disk images (OFS/FFS) — the standalone ADF tool."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
