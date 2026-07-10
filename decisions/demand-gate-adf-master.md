@@ -131,12 +131,38 @@ block (constant KS1.2+ blob), root/bitmap/dir/file headers, OFS data-block
 chaining, the AmigaDOS name hash and block checksums; `build198x adf` is the
 CLI. Layout was taken as ground truth from a known-good disk, cross-checked
 against ADFlib and gadf. **Deterministic** — dates zeroed, byte-stable across
-runs (an improvement over xdftool). Bounded to the curriculum shape (OFS DD,
-1.x boot, `s/startup-sequence` + one exe ≤72 data blocks / ~35 KB); oversized
-is a typed error. Verified: exodus (1 block) and flock unit-18 (26 KB / 55
-blocks) master and boot to correct renders in emu198x-amiga; round-trip +
-checksum + determinism tests pass. Wired into `capture.py`'s `ensure_amiga_adf`
-— the Amiga-assembly build is now fully family-tooled (Asm198x + Build198x),
-Docker retired. Open scope questions (§ above) resolved by the build; the
-`startup-sequence` is a fixed `<name>\n` template, ingest is raw hunk-exe +
-name + volume.
+runs (an improvement over xdftool). Verified: exodus (1 block) and flock
+unit-18 (26 KB / 55 blocks) master and boot to correct renders in
+emu198x-amiga; round-trip + checksum + determinism tests pass. Wired into
+`capture.py`'s `ensure_amiga_adf` — the Amiga-assembly build is now fully
+family-tooled (Asm198x + Build198x), Docker retired. Open scope questions
+(§ above) resolved by the build; the `startup-sequence` is a fixed `<name>\n`
+template, ingest is raw hunk-exe + name + volume.
+
+## Generalised beyond the curriculum shape (2026-07-10)
+
+The first build was bounded to the curriculum's inputs: one exe of ≤72 data
+blocks (~35 KB), and names assumed not to collide in the hash table. That is
+the wrong bar for a family tool — Asm198x, Build198x, and Emu198x are
+general tools that should be usable by anyone, with the curriculum merely the
+first consumer (see the umbrella principle
+[`../../../decisions/family-tools-are-general.md`](../../../decisions/family-tools-are-general.md)).
+So the writer was made correct for *any* input within the OFS-DD shape:
+
+- **Any file size.** Data-pointer overflow beyond a header's 72 slots chains
+  into `T_LIST` extension blocks. The old block ceiling became a disk-capacity
+  check: a program too large for an 880 KB disk is a typed error, not a
+  corrupt image.
+- **Any name set.** Directory inserts chain through the `hash_chain` field on a
+  slot collision instead of clobbering, so any set of names is correct. Header
+  checksums are deferred until after all inserts (an insert can set a header's
+  `hash_chain`).
+- **Protection bits** documented (active-low RWED; cosmetic under KS1.3) rather
+  than changed — the value is byte-parity with the xdftool reference the boot
+  depends on.
+
+Verified by re-mastering + booting flock unit-18 and by unit tests for an
+extension-block file and a hash-collision insert. What remains out — FFS, the
+International/Dir-Cache variants, hard-disk layouts, multi-disk sets,
+multi-file/dir trees, and the read side — is the general-tool roadmap, each
+its own later scope; none is a curriculum need today.
