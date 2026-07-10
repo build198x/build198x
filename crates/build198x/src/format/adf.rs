@@ -11,11 +11,14 @@
 //! bytes — unlike xdftool, which stamps creation dates. That makes the committed
 //! `.adf` deliverables byte-reproducible.
 //!
-//! **Bounded** to the one disk shape the curriculum needs — OFS DD, the standard
-//! 1.x boot block, an `s/startup-sequence` that runs the program, and one
-//! executable file. FFS, the International/Dir-Cache variants, hard-disk
-//! layouts, multi-disk sets, and files larger than a single file header's 72
-//! data-block pointers (~35 KB) are out of scope; the last is a typed error.
+//! **General within one disk shape** — a bootable OFS DD floppy: the standard
+//! 1.x boot block, an `s/startup-sequence` that runs the program, and the
+//! executable. Within that shape it is correct for *any* input: a file of any
+//! size chains into extension blocks (not just the 72 that fit a header), names
+//! that hash to the same slot chain through the hash table, and a program too
+//! large for an 880 KB disk is a typed error rather than a corrupt image. FFS,
+//! the International/Dir-Cache variants, hard-disk layouts, and multi-disk sets
+//! are the remaining generality frontier — each its own later scope.
 //!
 //! Layout facts were taken as ground truth from a known-good `xdftool` disk and
 //! cross-checked against ADFlib (adflib/ADFlib) and gadf (sphair/gadf, public
@@ -56,6 +59,9 @@ const FIRST_FREE: u32 = 882;
 const T_HEADER: u32 = 2;
 /// Primary block type for OFS data blocks.
 const T_DATA: u32 = 8;
+/// Primary block type for file-extension lists (data pointers beyond a header's
+/// 72 slots).
+const T_LIST: u32 = 16;
 /// Secondary type: root.
 const ST_ROOT: u32 = 1;
 /// Secondary type: user directory.
@@ -66,7 +72,12 @@ const ST_FILE: u32 = (-3i32) as u32;
 /// AmigaDOS name length limit.
 const MAX_NAME: usize = 30;
 
-/// Protection bits `xdftool ... protect +e` sets on the executable.
+/// Protection bits for the executable, read from a known-good `xdftool` disk.
+/// The low nibble is the RWED set, stored **active-low** — a set bit *revokes*
+/// that permission. `0x0d` (`1101`) revokes delete, write, and read and grants
+/// execute, listing as `------e-` in AmigaDOS's `hsparwed` display. KS1.3 does
+/// not enforce protection for LoadSeg, so the value is cosmetic for booting; it
+/// is kept byte-identical to xdftool's so mastered disks match the reference.
 const EXE_PROTECT: u32 = 0x0d;
 
 /// The standard KS1.2+ OFS boot block: `DOS\0`, its checksum, the boot code,
@@ -140,6 +151,115 @@ fn validate_name(name: &str, what: &'static str) -> Result<(), EncodeError> {
     Ok(())
 }
 
+/// The immutable 512-byte slice for block `n`.
+fn block(img: &[u8], n: u32) -> &[u8] {
+    let off = n as usize * BSIZE;
+    &img[off..off + BSIZE]
+}
+
+/// Insert `child` into `parent`'s hash table under `name`, chaining on a slot
+/// collision via the sibling chain (`hash_chain` at `BSIZE-16`). This makes the
+/// writer correct for *any* set of names, not only ones that happen not to
+/// collide. Does not checksum — the caller checksums headers after all inserts
+/// (an insert may set a header's `hash_chain`).
+fn dir_insert(img: &mut [u8], parent: u32, child: u32, name: &str) {
+    let slot = 24 + 4 * name_hash(name);
+    let head = read_u32(block(img, parent), slot);
+    if head == 0 {
+        put_u32(block_mut(img, parent), slot, child);
+    } else {
+        let mut cur = head;
+        loop {
+            let next = read_u32(block(img, cur), BSIZE - 16);
+            if next == 0 {
+                break;
+            }
+            cur = next;
+        }
+        put_u32(block_mut(img, cur), BSIZE - 16, child);
+    }
+}
+
+/// Extension blocks a file of `data_n` data blocks needs beyond its header's 72
+/// pointer slots.
+fn ext_count(data_n: usize) -> usize {
+    data_n.saturating_sub(1) / HT_SIZE
+}
+
+/// Write a file's chained OFS data blocks — any length.
+fn write_file_data(img: &mut [u8], header_key: u32, data_blocks: &[u32], payload: &[u8]) {
+    for (i, &blk) in data_blocks.iter().enumerate() {
+        let start = i * OFS_DATA;
+        let chunk = &payload[start..(start + OFS_DATA).min(payload.len())];
+        let next = data_blocks.get(i + 1).copied().unwrap_or(0);
+        let b = block_mut(img, blk);
+        put_u32(b, 0, T_DATA);
+        put_u32(b, 4, header_key);
+        put_u32(b, 8, i as u32 + 1); // 1-based sequence
+        put_u32(b, 12, chunk.len() as u32);
+        put_u32(b, 16, next);
+        b[24..24 + chunk.len()].copy_from_slice(chunk);
+        let c = checksum(b, 20);
+        put_u32(block_mut(img, blk), 20, c);
+    }
+}
+
+/// Fill a header/ext block's data-pointer table (slots from the top down).
+fn put_ptr_table(img: &mut [u8], blk: u32, ptrs: &[u32]) {
+    let b = block_mut(img, blk);
+    for (i, &d) in ptrs.iter().enumerate() {
+        put_u32(b, 24 + 4 * (HT_SIZE - 1 - i), d);
+    }
+}
+
+/// Write a file header plus any extension blocks holding its data-block
+/// pointers (72 per block) — a file of any size, up to the disk. The header is
+/// left unchecksummed (a directory insert may set its `hash_chain`); the ext
+/// blocks, which inserts never touch, are checksummed here.
+#[allow(clippy::too_many_arguments)]
+fn write_file_header(
+    img: &mut [u8],
+    hdr: u32,
+    ext: &[u32],
+    name: &str,
+    parent: u32,
+    data_blocks: &[u32],
+    byte_size: u32,
+    protect: u32,
+) {
+    let first = &data_blocks[..data_blocks.len().min(HT_SIZE)];
+    {
+        let b = block_mut(img, hdr);
+        put_u32(b, 0, T_HEADER);
+        put_u32(b, 4, hdr); // own block number
+        put_u32(b, 8, first.len() as u32); // high_seq: pointers in this block
+        put_u32(b, 16, data_blocks[0]); // first_data
+        put_u32(b, BSIZE - 192, protect);
+        put_u32(b, BSIZE - 188, byte_size);
+        put_name(b, name);
+        put_u32(b, BSIZE - 12, parent);
+        put_u32(b, BSIZE - 8, ext.first().copied().unwrap_or(0)); // extension
+        put_u32(b, BSIZE - 4, ST_FILE);
+    }
+    put_ptr_table(img, hdr, first);
+    for (k, &e) in ext.iter().enumerate() {
+        let start = HT_SIZE * (k + 1);
+        let these = &data_blocks[start..(start + HT_SIZE).min(data_blocks.len())];
+        {
+            let b = block_mut(img, e);
+            put_u32(b, 0, T_LIST);
+            put_u32(b, 4, e); // own block number
+            put_u32(b, 8, these.len() as u32);
+            put_u32(b, BSIZE - 12, hdr); // parent: the file header
+            put_u32(b, BSIZE - 8, ext.get(k + 1).copied().unwrap_or(0)); // next ext
+            put_u32(b, BSIZE - 4, ST_FILE);
+        }
+        put_ptr_table(img, e, these);
+        let c = checksum(block(img, e), 20);
+        put_u32(block_mut(img, e), 20, c);
+    }
+}
+
 /// Master `exe` (a KS1.x hunk executable) into a bootable OFS DD `.adf` that
 /// runs it. `name` is the file's on-disk name and the `startup-sequence`
 /// command; `volume` is the disk label. Returns the 901,120-byte image.
@@ -149,22 +269,11 @@ pub fn master(exe: &[u8], name: &str, volume: &str) -> Result<Vec<u8>, EncodeErr
 
     let startup = format!("{name}\n");
     let startup_bytes = startup.as_bytes();
-
-    // Data-block counts. A file's data-block pointers live in its single header
-    // (72 slots); files needing more (>~35 KB) would want extension blocks,
-    // which are out of scope.
     let exe_data_n = exe.len().div_ceil(OFS_DATA).max(1);
-    if exe_data_n > HT_SIZE {
-        return Err(EncodeError::ValueOutOfRange {
-            what: "executable size (data blocks)",
-            value: exe_data_n as u32,
-            min: 1,
-            max: HT_SIZE as u32,
-        });
-    }
     let startup_data_n = startup_bytes.len().div_ceil(OFS_DATA).max(1);
 
-    // Deterministic block allocation, upward from FIRST_FREE.
+    // Deterministic block allocation, upward from FIRST_FREE: each file is a
+    // header, its extension blocks, then its data blocks.
     let mut next = FIRST_FREE;
     let mut alloc = |count: u32| {
         let base = next;
@@ -173,114 +282,84 @@ pub fn master(exe: &[u8], name: &str, volume: &str) -> Result<Vec<u8>, EncodeErr
     };
     let s_dir_blk = alloc(1);
     let startup_hdr_blk = alloc(1);
-    let startup_data_base = alloc(startup_data_n as u32);
+    let startup_ext: Vec<u32> = (0..ext_count(startup_data_n)).map(|_| alloc(1)).collect();
+    let startup_data: Vec<u32> = (0..startup_data_n).map(|_| alloc(1)).collect();
     let exe_hdr_blk = alloc(1);
-    let exe_data_base = alloc(exe_data_n as u32);
-    let used_end = next; // exclusive: FIRST_FREE..used_end are the file-tree blocks
+    let exe_ext: Vec<u32> = (0..ext_count(exe_data_n)).map(|_| alloc(1)).collect();
+    let exe_data: Vec<u32> = (0..exe_data_n).map(|_| alloc(1)).collect();
+    let used_end = next; // FIRST_FREE..used_end are the file-tree blocks
+
+    if used_end > BLOCKS {
+        // The program plus its filesystem overhead doesn't fit on an 880K disk.
+        return Err(EncodeError::ValueOutOfRange {
+            what: "disk full (blocks required)",
+            value: used_end - 2,
+            min: 1,
+            max: BLOCKS - FIRST_FREE,
+        });
+    }
 
     let mut img = vec![0u8; BLOCKS as usize * BSIZE];
 
-    // --- Boot block (sectors 0-1): the constant blob ---
+    // Boot block (sectors 0-1): the constant blob.
     img[..BOOT_PREFIX.len()].copy_from_slice(&BOOT_PREFIX);
 
-    // --- OFS data blocks: startup-sequence, then the exe ---
-    let write_data = |img: &mut [u8], base: u32, header_key: u32, payload: &[u8]| {
-        let n = payload.len().div_ceil(OFS_DATA).max(1);
-        for i in 0..n {
-            let block_no = base + i as u32;
-            let start = i * OFS_DATA;
-            let chunk = &payload[start..(start + OFS_DATA).min(payload.len())];
-            let next_data = if i + 1 < n { base + i as u32 + 1 } else { 0 };
-            let b = block_mut(img, block_no);
-            put_u32(b, 0, T_DATA);
-            put_u32(b, 4, header_key);
-            put_u32(b, 8, i as u32 + 1); // 1-based sequence
-            put_u32(b, 12, chunk.len() as u32);
-            put_u32(b, 16, next_data);
-            b[24..24 + chunk.len()].copy_from_slice(chunk);
-            let c = checksum(b, 20);
-            put_u32(block_mut(img, block_no), 20, c);
-        }
-    };
-    write_data(&mut img, startup_data_base, startup_hdr_blk, startup_bytes);
-    write_data(&mut img, exe_data_base, exe_hdr_blk, exe);
-
-    // --- File headers ---
-    let write_file_header = |img: &mut [u8],
-                             hdr_blk: u32,
-                             name: &str,
-                             parent: u32,
-                             data_base: u32,
-                             data_n: usize,
-                             byte_size: u32,
-                             protect: u32| {
-        let b = block_mut(img, hdr_blk);
-        put_u32(b, 0, T_HEADER);
-        put_u32(b, 4, hdr_blk); // own block number
-        put_u32(b, 8, data_n as u32); // high_seq: data-pointer count
-        put_u32(b, 16, data_base); // first_data
-        // Data-block pointers fill the hash-table area from the top down.
-        for i in 0..data_n {
-            put_u32(b, 24 + 4 * (HT_SIZE - 1 - i), data_base + i as u32);
-        }
-        put_u32(b, BSIZE - 192, protect);
-        put_u32(b, BSIZE - 188, byte_size);
-        put_name(b, name);
-        put_u32(b, BSIZE - 12, parent);
-        put_u32(b, BSIZE - 4, ST_FILE);
-        let c = checksum(b, 20);
-        put_u32(block_mut(img, hdr_blk), 20, c);
-    };
+    // Data blocks, then file headers (+ extension blocks) — headers unchecksummed.
+    write_file_data(&mut img, startup_hdr_blk, &startup_data, startup_bytes);
+    write_file_data(&mut img, exe_hdr_blk, &exe_data, exe);
     write_file_header(
         &mut img,
         startup_hdr_blk,
+        &startup_ext,
         "startup-sequence",
         s_dir_blk,
-        startup_data_base,
-        startup_data_n,
+        &startup_data,
         startup_bytes.len() as u32,
         0,
     );
     write_file_header(
         &mut img,
         exe_hdr_blk,
+        &exe_ext,
         name,
         ROOT_BLK,
-        exe_data_base,
-        exe_data_n,
+        &exe_data,
         exe.len() as u32,
         EXE_PROTECT,
     );
 
-    // --- `s/` directory header: one child, startup-sequence ---
+    // `s/` directory header (structure only; the entry is inserted below).
     {
         let b = block_mut(&mut img, s_dir_blk);
         put_u32(b, 0, T_HEADER);
         put_u32(b, 4, s_dir_blk); // own block
-        put_u32(b, 24 + 4 * name_hash("startup-sequence"), startup_hdr_blk);
         put_name(b, "s");
         put_u32(b, BSIZE - 12, ROOT_BLK); // parent
         put_u32(b, BSIZE - 4, ST_USERDIR);
-        let c = checksum(b, 20);
-        put_u32(block_mut(&mut img, s_dir_blk), 20, c);
     }
 
-    // --- Root block: volume name, top-level entries, bitmap pointer ---
+    // Root block (structure only; entries inserted below).
     {
         let b = block_mut(&mut img, ROOT_BLK);
         put_u32(b, 0, T_HEADER);
         put_u32(b, 12, HT_SIZE as u32); // hash-table size (root only)
-        put_u32(b, 24 + 4 * name_hash("s"), s_dir_blk);
-        put_u32(b, 24 + 4 * name_hash(name), exe_hdr_blk);
         put_u32(b, BSIZE - 200, 0xffff_ffff); // bitmap flag: valid
         put_u32(b, BSIZE - 196, BITMAP_BLK); // bm_pages[0]
         put_name(b, volume);
         put_u32(b, BSIZE - 4, ST_ROOT);
-        let c = checksum(b, 20);
-        put_u32(block_mut(&mut img, ROOT_BLK), 20, c);
     }
 
-    // --- Bitmap block: 1 = free. Mark the used blocks used. ---
+    // Insert entries into their parents (chaining on any hash collision), then
+    // checksum every header — an insert can set a header's `hash_chain`.
+    dir_insert(&mut img, s_dir_blk, startup_hdr_blk, "startup-sequence");
+    dir_insert(&mut img, ROOT_BLK, s_dir_blk, "s");
+    dir_insert(&mut img, ROOT_BLK, exe_hdr_blk, name);
+    for blk in [ROOT_BLK, s_dir_blk, startup_hdr_blk, exe_hdr_blk] {
+        let c = checksum(block(&img, blk), 20);
+        put_u32(block_mut(&mut img, blk), 20, c);
+    }
+
+    // Bitmap block: 1 = free. Mark the used blocks used.
     {
         let words = ((BLOCKS - 2) as usize).div_ceil(32); // blocks 2..BLOCKS
         let mut map = vec![0xffff_ffffu32; words];
@@ -382,6 +461,67 @@ mod tests {
     }
 
     #[test]
+    fn round_trips_a_file_needing_extension_blocks() {
+        // >72 data blocks: the header's 72 pointer slots overflow into at least
+        // one extension block. A general writer must handle files of any size.
+        let exe: Vec<u8> = (0..OFS_DATA * 80 + 7).map(|i| (i % 251) as u8).collect();
+        let img = master(&exe, "huge", "Huge").unwrap();
+        assert_checksums(&img, "huge");
+        assert_eq!(read_file(&img, "huge"), exe);
+
+        // The extension chain is well-formed and self-checksummed.
+        let hdr = read_u32(block(&img, ROOT_BLK), 24 + 4 * name_hash("huge"));
+        let mut ext = read_u32(block(&img, hdr), BSIZE - 8);
+        let mut ext_seen = 0;
+        while ext != 0 {
+            let b = block(&img, ext);
+            assert_eq!(read_u32(b, 0), T_LIST, "ext block {ext} type");
+            assert_eq!(read_u32(b, 20), checksum(b, 20), "ext checksum {ext}");
+            ext = read_u32(b, BSIZE - 8);
+            ext_seen += 1;
+        }
+        assert!(ext_seen >= 1, "expected at least one extension block");
+    }
+
+    #[test]
+    fn dir_insert_chains_on_hash_collision() {
+        // Two distinct names that hash to the same slot must both stay
+        // reachable: the first in the slot, the second on its hash_chain. This
+        // is what makes the writer correct for *any* set of names.
+        let mut seen: Vec<(usize, String)> = Vec::new();
+        let (mut first, mut second) = (None, None);
+        for i in 0..4000u32 {
+            let n = format!("f{i}");
+            let slot = name_hash(&n);
+            if let Some((_, prev)) = seen.iter().find(|(s, _)| *s == slot) {
+                first = Some(prev.clone());
+                second = Some(n);
+                break;
+            }
+            seen.push((slot, n));
+        }
+        let (first, second) = (first.unwrap(), second.unwrap());
+        assert_eq!(name_hash(&first), name_hash(&second));
+
+        let mut img = vec![0u8; BLOCKS as usize * BSIZE];
+        let parent = ROOT_BLK;
+        dir_insert(&mut img, parent, 100, &first);
+        dir_insert(&mut img, parent, 101, &second);
+        let slot = 24 + 4 * name_hash(&first);
+        assert_eq!(read_u32(block(&img, parent), slot), 100, "slot holds first");
+        assert_eq!(
+            read_u32(block(&img, 100), BSIZE - 16),
+            101,
+            "second chains off first"
+        );
+        assert_eq!(
+            read_u32(block(&img, 101), BSIZE - 16),
+            0,
+            "chain terminates"
+        );
+    }
+
+    #[test]
     fn deterministic() {
         let exe = vec![0xa5u8; 5000];
         assert_eq!(
@@ -391,8 +531,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_oversized_and_bad_names() {
-        let too_big = vec![0u8; OFS_DATA * (HT_SIZE + 1)];
+    fn rejects_disk_full_and_bad_names() {
+        // Larger than an 880K disk can hold: a typed disk-full error, not a
+        // panic or a corrupt image.
+        let too_big = vec![0u8; BSIZE * BLOCKS as usize];
         assert!(master(&too_big, "x", "X").is_err());
         assert!(master(b"z", "", "V").is_err());
         assert!(master(b"z", &"n".repeat(31), "V").is_err());
