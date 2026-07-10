@@ -58,7 +58,23 @@ jobs:
       # dependencies on crates.io first. Only format-commodore-amiga-adf is
       # published today; add further crates below as each gains a trusted
       # publisher (e.g. build198x-adf, after the library it depends on).
+      #
+      # It is independently versioned, so most build198x releases leave its
+      # version unchanged: the guard skips a version already on crates.io, so
+      # only a genuine ADF bump actually publishes. (This also makes re-runs
+      # idempotent.)
       - name: Publish format-commodore-amiga-adf
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        run: cargo publish -p format-commodore-amiga-adf
+        run: |
+          set -euo pipefail
+          crate=format-commodore-amiga-adf
+          version=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r --arg c "$crate" '.packages[] | select(.name==$c) | .version')
+          if curl -sf -A "198x-ci (steve@stevehill.xyz)" \
+               "https://crates.io/api/v1/crates/$crate/$version" >/dev/null; then
+            echo "$crate $version already on crates.io — skipping."
+          else
+            echo "Publishing $crate $version"
+            cargo publish -p "$crate"
+          fi

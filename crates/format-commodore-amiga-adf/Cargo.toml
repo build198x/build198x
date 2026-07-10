@@ -8,7 +8,11 @@
 [package]
 name = "format-commodore-amiga-adf"
 description = "Deterministic, dependency-free Amiga ADF (OFS/FFS) disk images — read, write, and verify bootable floppies."
-version.workspace = true
+# Independently versioned (not the workspace lockstep version): this is a
+# published crate whose version communicates *its* changes to consumers, so it
+# bumps only when it changes — not on every build198x release. First published
+# at 0.2.0; continues from there.
+version = "0.2.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
