@@ -60,7 +60,23 @@ than the shared `format::EncodeError`. The naming discipline still binds
 **The Emu198x tie this creates.** Writing an ADF is Build198x's domain; reading
 one is more Emu198x's (it mounts floppies). Once the crate holds the read side,
 Emu198x is its natural second consumer — consuming it by pinned git rev exactly
-as it already consumes `mediaspec` and Asm198x's `isa-disasm`. That home
-question (stay in Build198x on the `mediaspec` model, or earn a neutral org like
-the reserved `isa198x`) is **deferred until Emu198x actually pulls on the read
-side** — resolving it now would be the pre-emptive split this rule forbids.
+as it already consumes `mediaspec` and Asm198x's `isa-disasm`.
+
+**The neutral home: `format198x` (reserved 2026-07-10).** The `format198x`
+GitHub org was grabbed as the eventual home for the `format-{manufacturer}-
+{system}-{format}` crate family — the direct analog of the reserved `isa198x`
+org for the ISA/CPU-spec crates. A domain org (not a catch-all `lib198x`, which
+would be the junk drawer the family's membership tests guard against) keeps the
+grain: `format198x` alongside `isa198x`, each scoped. When it fills it will be a
+workspace repo (`format198x/format198x`), mirroring `build198x/build198x`.
+
+**Migration is deferred — reserve now, move when real.** Per the split-when-real
+rule, `format-commodore-amiga-adf` **stays in the `build198x` workspace for
+now** and publishes to crates.io from there; the org sits empty like `isa198x`.
+The move to `format198x/format198x` fires when a *second* format crate (a D64,
+TAP, or a split-out codec) makes the standalone workspace worth standing up, or
+when Emu198x adopting the read side makes the neutral home concrete — whichever
+comes first. Moving one crate today would be the pre-emptive split this rule
+forbids. The crates.io name is independent of the org, so the first publish's
+`repository` pointing at `build198x` is a cosmetic detail, corrected in a later
+version at migration.
