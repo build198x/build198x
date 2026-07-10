@@ -1336,9 +1336,68 @@ fn image_usage() -> &'static str {
      \x20 6  partial batch failure (some inputs succeeded, some failed)"
 }
 
-/// `build198x adf <exe> -o <out.adf> [--volume <label>] [--name <file>]`
-/// — master a Kickstart-1.x hunk executable into a bootable OFS DD floppy.
+/// The output format for the adf verbs: human text (default) or one JSON line.
+/// (`Format` is already taken by the image command, hence `AdfFormat`.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AdfFormat {
+    Text,
+    Json,
+}
+
+/// Pull `--format <text|json>` from an adf argument list, returning the format
+/// and the remaining arguments. Defaults to text. Errors on a bad/missing value.
+fn adf_take_format(args: &[String]) -> Result<(AdfFormat, Vec<String>), String> {
+    let mut fmt = AdfFormat::Text;
+    let mut rest = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--format" {
+            i += 1;
+            match args.get(i).map(String::as_str) {
+                Some("text") => fmt = AdfFormat::Text,
+                Some("json") => fmt = AdfFormat::Json,
+                Some(other) => {
+                    return Err(format!("unknown format `{other}` (use text or json)"));
+                }
+                None => return Err("--format needs a value (text or json)".to_owned()),
+            }
+        } else {
+            rest.push(args[i].clone());
+        }
+        i += 1;
+    }
+    Ok((fmt, rest))
+}
+
+/// `build198x adf` — master, verify, or inspect a bootable Amiga ADF. A leading
+/// `master`/`verify`/`info` selects the verb; a bare exe is an implicit master,
+/// preserving the pre-verb `build198x adf <exe> -o <out.adf>` interface.
 fn adf_command(args: &[String]) -> ExitCode {
+    match args.first().map(String::as_str) {
+        Some("--help" | "-h") => {
+            println!("{}", adf_usage());
+            ExitCode::SUCCESS
+        }
+        Some("master") => adf_dispatch_master(&args[1..]),
+        Some("verify") => adf_verify(&args[1..]),
+        Some("info") => adf_info(&args[1..]),
+        _ => adf_dispatch_master(args),
+    }
+}
+
+/// Strip `--format` from a master argument list, then master. Split out so
+/// `adf_master`'s body keeps iterating an already-clean list.
+fn adf_dispatch_master(args: &[String]) -> ExitCode {
+    match adf_take_format(args) {
+        Ok((fmt, rest)) => adf_master(&rest, fmt),
+        Err(e) => adf_arg_error(&e),
+    }
+}
+
+/// `build198x adf [master] <exe> -o <out.adf> [--volume <label>] [--name <file>]`
+/// — master a Kickstart-1.x hunk executable into a bootable OFS DD floppy. The
+/// argument list is already `--format`-stripped by the dispatcher.
+fn adf_master(args: &[String], fmt: AdfFormat) -> ExitCode {
     let mut exe_path: Option<&String> = None;
     let mut out_path: Option<&String> = None;
     let mut volume: Option<String> = None;
@@ -1348,7 +1407,7 @@ fn adf_command(args: &[String]) -> ExitCode {
     while i < args.len() {
         match args[i].as_str() {
             "--help" | "-h" => {
-                println!("{}", adf_usage());
+                println!("{}", adf_master_usage());
                 return ExitCode::SUCCESS;
             }
             "--ffs" => fs = adf::FileSystem::Ffs,
@@ -1431,28 +1490,300 @@ fn adf_command(args: &[String]) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    println!(
-        "{{\"tool\":\"adf\",\"output\":\"{}\",\"volume\":\"{}\",\"file\":\"{}\",\"filesystem\":\"{}\",\"bytes\":{},\"exe_bytes\":{}}}",
-        json_escape(out_path),
-        json_escape(&volume),
-        json_escape(&name),
-        fs.name(),
-        img.len(),
-        exe.len()
-    );
+    let line = match fmt {
+        AdfFormat::Text => adf_master_text(out_path, img.len(), &volume, &name, fs, exe.len()),
+        AdfFormat::Json => adf_master_json(out_path, img.len(), &volume, &name, fs, exe.len()),
+    };
+    println!("{line}");
     ExitCode::SUCCESS
 }
 
+fn adf_master_text(
+    out_path: &str,
+    img_len: usize,
+    volume: &str,
+    name: &str,
+    fs: adf::FileSystem,
+    exe_len: usize,
+) -> String {
+    format!(
+        "{out_path}: {}K {} disk \"{volume}\", {name} ({exe_len} bytes)",
+        img_len / 1024,
+        fs.name().to_uppercase(),
+    )
+}
+
+fn adf_master_json(
+    out_path: &str,
+    img_len: usize,
+    volume: &str,
+    name: &str,
+    fs: adf::FileSystem,
+    exe_len: usize,
+) -> String {
+    format!(
+        "{{\"tool\":\"adf\",\"output\":\"{}\",\"volume\":\"{}\",\"file\":\"{}\",\"filesystem\":\"{}\",\"bytes\":{},\"exe_bytes\":{}}}",
+        json_escape(out_path),
+        json_escape(volume),
+        json_escape(name),
+        fs.name(),
+        img_len,
+        exe_len
+    )
+}
+
+fn adf_verify(args: &[String]) -> ExitCode {
+    let (fmt, rest) = match adf_take_format(args) {
+        Ok(v) => v,
+        Err(e) => return adf_verb_arg_error("verify", &e),
+    };
+    let path = match adf_single_disk_arg("verify", &rest) {
+        Ok(p) => p,
+        Err(code) => return code,
+    };
+    let img = match adf_read_disk(&path) {
+        Ok(b) => b,
+        Err(code) => return code,
+    };
+    adf_run_verify(&img, &path, fmt)
+}
+
+/// Open and deep-verify an in-memory image, printing the verdict. Split from
+/// `adf_verify` so the open/verify/error paths are testable without a file.
+fn adf_run_verify(img: &[u8], path: &str, fmt: AdfFormat) -> ExitCode {
+    let disk = match adf::Disk::open(img) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("build198x adf: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    if let Err(e) = disk.verify() {
+        eprintln!("build198x adf: {e}");
+        return ExitCode::from(1);
+    }
+    let line = match fmt {
+        AdfFormat::Text => adf_verify_text(path, img.len(), disk.filesystem(), &disk.label()),
+        AdfFormat::Json => adf_verify_json(path, disk.filesystem(), &disk.label()),
+    };
+    println!("{line}");
+    ExitCode::SUCCESS
+}
+
+fn adf_verify_text(path: &str, img_len: usize, fs: adf::FileSystem, label: &str) -> String {
+    format!(
+        "{path}: OK — {}K {} \"{label}\"",
+        img_len / 1024,
+        fs.name().to_uppercase(),
+    )
+}
+
+fn adf_verify_json(path: &str, fs: adf::FileSystem, label: &str) -> String {
+    format!(
+        "{{\"tool\":\"adf\",\"command\":\"verify\",\"input\":\"{}\",\"filesystem\":\"{}\",\"label\":\"{}\",\"result\":\"ok\"}}",
+        json_escape(path),
+        fs.name(),
+        json_escape(label)
+    )
+}
+
+fn adf_info(args: &[String]) -> ExitCode {
+    let (fmt, rest) = match adf_take_format(args) {
+        Ok(v) => v,
+        Err(e) => return adf_verb_arg_error("info", &e),
+    };
+    let path = match adf_single_disk_arg("info", &rest) {
+        Ok(p) => p,
+        Err(code) => return code,
+    };
+    let img = match adf_read_disk(&path) {
+        Ok(b) => b,
+        Err(code) => return code,
+    };
+    adf_run_info(&img, &path, fmt)
+}
+
+/// Open an in-memory image and print its label, filesystem, and root listing.
+fn adf_run_info(img: &[u8], path: &str, fmt: AdfFormat) -> ExitCode {
+    let disk = match adf::Disk::open(img) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("build198x adf: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let entries = match disk.list("") {
+        Ok(e) => adf_sorted_entries(e),
+        Err(e) => {
+            eprintln!("build198x adf: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let line = match fmt {
+        AdfFormat::Text => {
+            adf_info_text(path, img.len(), disk.filesystem(), &disk.label(), &entries)
+        }
+        AdfFormat::Json => {
+            adf_info_json(path, img.len(), disk.filesystem(), &disk.label(), &entries)
+        }
+    };
+    println!("{line}");
+    ExitCode::SUCCESS
+}
+
+/// Entries sorted by name — the stable order `info` presents.
+fn adf_sorted_entries(mut entries: Vec<adf::Entry>) -> Vec<adf::Entry> {
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries
+}
+
+fn adf_info_text(
+    path: &str,
+    img_len: usize,
+    fs: adf::FileSystem,
+    label: &str,
+    entries: &[adf::Entry],
+) -> String {
+    let mut out = format!(
+        "{path}: {}K {} \"{label}\"",
+        img_len / 1024,
+        fs.name().to_uppercase(),
+    );
+    if entries.is_empty() {
+        out.push_str("\n  (empty)");
+        return out;
+    }
+    let rows: Vec<(&str, &str, String)> = entries
+        .iter()
+        .map(|e| {
+            let (kind, size) = match e.kind {
+                adf::EntryKind::File => ("file", e.size.to_string()),
+                adf::EntryKind::Directory => ("dir", "-".to_owned()),
+            };
+            (e.name.as_str(), kind, size)
+        })
+        .collect();
+    let name_w = rows
+        .iter()
+        .map(|(n, ..)| n.chars().count())
+        .chain(std::iter::once(4))
+        .max()
+        .unwrap_or(4);
+    let size_w = rows
+        .iter()
+        .map(|(.., s)| s.len())
+        .chain(std::iter::once(4))
+        .max()
+        .unwrap_or(4);
+    out.push_str(&format!(
+        "\n  {:<name_w$}  {:<4}  {:>size_w$}",
+        "NAME", "KIND", "SIZE"
+    ));
+    for (name, kind, size) in &rows {
+        out.push_str(&format!("\n  {name:<name_w$}  {kind:<4}  {size:>size_w$}"));
+    }
+    out
+}
+
+fn adf_info_json(
+    path: &str,
+    img_len: usize,
+    fs: adf::FileSystem,
+    label: &str,
+    entries: &[adf::Entry],
+) -> String {
+    let mut out = format!(
+        "{{\"tool\":\"adf\",\"command\":\"info\",\"input\":\"{}\",\"filesystem\":\"{}\",\"label\":\"{}\",\"bytes\":{},\"entries\":[",
+        json_escape(path),
+        fs.name(),
+        json_escape(label),
+        img_len
+    );
+    for (i, e) in entries.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        let kind = match e.kind {
+            adf::EntryKind::File => "file",
+            adf::EntryKind::Directory => "dir",
+        };
+        out.push_str(&format!(
+            "{{\"name\":\"{}\",\"kind\":\"{}\",\"size\":{}}}",
+            json_escape(&e.name),
+            kind,
+            e.size
+        ));
+    }
+    out.push_str("]}");
+    out
+}
+
+/// Read a disk file, reporting a read failure as `exit 1` with a diagnostic.
+fn adf_read_disk(path: &str) -> Result<Vec<u8>, ExitCode> {
+    match std::fs::read(path) {
+        Ok(b) => Ok(b),
+        Err(e) => {
+            eprintln!("build198x adf: cannot read {path}: {e}");
+            Err(ExitCode::from(1))
+        }
+    }
+}
+
+/// Parse a read verb's single `<disk.adf>` positional (plus `-h`/`--help`).
+fn adf_single_disk_arg(verb: &str, rest: &[String]) -> Result<String, ExitCode> {
+    let mut path: Option<&String> = None;
+    for a in rest {
+        match a.as_str() {
+            "--help" | "-h" => {
+                println!("{}", adf_verb_usage(verb));
+                return Err(ExitCode::SUCCESS);
+            }
+            other if other.starts_with('-') => {
+                return Err(adf_verb_arg_error(verb, &format!("unknown flag `{other}`")));
+            }
+            _ => {
+                if path.is_some() {
+                    return Err(adf_verb_arg_error(verb, "more than one .adf given"));
+                }
+                path = Some(a);
+            }
+        }
+    }
+    match path {
+        Some(p) => Ok(p.clone()),
+        None => Err(adf_verb_arg_error(verb, "no .adf given")),
+    }
+}
+
+fn adf_verb_arg_error(verb: &str, msg: &str) -> ExitCode {
+    eprintln!("build198x adf {verb}: {msg}\n\n{}", adf_verb_usage(verb));
+    ExitCode::from(2)
+}
+
 fn adf_arg_error(msg: &str) -> ExitCode {
-    eprintln!("build198x adf: {msg}\n\n{}", adf_usage());
+    eprintln!("build198x adf: {msg}\n\n{}", adf_master_usage());
     ExitCode::from(2)
 }
 
 fn adf_usage() -> String {
+    let name = env!("CARGO_PKG_NAME");
     format!(
-        "{name} adf — master a hunk executable into a bootable Amiga floppy\n\n\
+        "{name} adf — master, verify, and inspect bootable Amiga ADF floppies\n\n\
          usage:\n\
-         \x20 {name} adf <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs]\n\n\
+         \x20 {name} adf <exe> -o <out.adf> [flags]         master (shorthand)\n\
+         \x20 {name} adf master <exe> -o <out.adf> [flags]  master a hunk exe into a bootable disk\n\
+         \x20 {name} adf verify <disk.adf>                  check an ADF's integrity\n\
+         \x20 {name} adf info <disk.adf>                     show label, filesystem, and contents\n\n\
+         Every verb takes --format text|json (default text). Run\n\
+         `{name} adf <verb> --help` for a verb's own options."
+    )
+}
+
+fn adf_master_usage() -> String {
+    format!(
+        "{name} adf master — master a hunk executable into a bootable Amiga floppy\n\n\
+         usage:\n\
+         \x20 {name} adf [master] <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs]\n\n\
          Writes an 880K DD `.adf` that boots straight into the program. OFS is\n\
          the default (boots on a bare A500/KS1.3); --ffs is denser but needs\n\
          KS2.0+. Deterministic (zeroed dates) — byte-stable output.\n\n\
@@ -1461,9 +1792,28 @@ fn adf_usage() -> String {
          \x20 --volume <label>      disk label (default: capitalised file name)\n\
          \x20 --name <file>         on-disk file + startup-sequence command\n\
          \x20                       (default: the executable's basename)\n\
-         \x20 --ofs | --ffs         filesystem (default: --ofs; --ffs needs KS2.0+)",
+         \x20 --ofs | --ffs         filesystem (default: --ofs; --ffs needs KS2.0+)\n\
+         \x20 --format <fmt>        output format: text (default) or json",
         name = env!("CARGO_PKG_NAME")
     )
+}
+
+fn adf_verb_usage(verb: &str) -> String {
+    let name = env!("CARGO_PKG_NAME");
+    match verb {
+        "verify" => format!(
+            "{name} adf verify — check an ADF's integrity (checksums + structure)\n\n\
+             usage:\n\
+             \x20 {name} adf verify <disk.adf> [--format text|json]\n\n\
+             Exits 0 if the disk is sound, 1 if it is corrupt or not an ADF."
+        ),
+        "info" => format!(
+            "{name} adf info — show an ADF's label, filesystem, and root listing\n\n\
+             usage:\n\
+             \x20 {name} adf info <disk.adf> [--format text|json]"
+        ),
+        _ => adf_master_usage(),
+    }
 }
 
 #[cfg(test)]
@@ -1488,6 +1838,128 @@ mod tests {
     #[test]
     fn json_escape_preserves_non_ascii() {
         assert_eq!(json_escape("café 198×"), "café 198×");
+    }
+
+    /// A well-formed OFS disk: a file plus two dirs at the root.
+    fn adf_good_disk() -> Vec<u8> {
+        let mut v = adf::Volume::new("MyGame", adf::FileSystem::Ofs);
+        v.add_file("mygame", &[0u8; 2048]).unwrap();
+        v.add_dir("c").unwrap();
+        v.add_dir("s").unwrap();
+        v.build().unwrap()
+    }
+
+    #[test]
+    fn adf_command_rejects_missing_args() {
+        assert_eq!(adf_command(&[]), ExitCode::from(2));
+        assert_eq!(adf_command(&["master".to_owned()]), ExitCode::from(2));
+    }
+
+    #[test]
+    fn adf_read_verbs_need_a_disk() {
+        assert_eq!(adf_command(&["verify".to_owned()]), ExitCode::from(2));
+        assert_eq!(adf_command(&["info".to_owned()]), ExitCode::from(2));
+    }
+
+    #[test]
+    fn adf_bad_format_value_is_a_usage_error() {
+        assert_eq!(
+            adf_command(&[
+                "verify".to_owned(),
+                "d.adf".to_owned(),
+                "--format".to_owned(),
+                "yaml".to_owned(),
+            ]),
+            ExitCode::from(2)
+        );
+    }
+
+    #[test]
+    fn adf_verify_accepts_good_and_rejects_corrupt() {
+        assert_eq!(
+            adf_run_verify(&adf_good_disk(), "good.adf", AdfFormat::Text),
+            ExitCode::SUCCESS
+        );
+        let mut img = adf_good_disk();
+        img[500] ^= 0xff; // flip a boot-block byte -> boot checksum fails
+        assert_eq!(
+            adf_run_verify(&img, "bad.adf", AdfFormat::Text),
+            ExitCode::from(1)
+        );
+        assert_eq!(
+            adf_run_verify(&[0u8; 16], "nope.bin", AdfFormat::Text),
+            ExitCode::from(1)
+        );
+    }
+
+    #[test]
+    fn adf_info_reads_a_good_disk() {
+        assert_eq!(
+            adf_run_info(&adf_good_disk(), "good.adf", AdfFormat::Json),
+            ExitCode::SUCCESS
+        );
+    }
+
+    #[test]
+    fn adf_entries_sort_by_name() {
+        let e = |name: &str| adf::Entry {
+            name: name.to_owned(),
+            kind: adf::EntryKind::File,
+            size: 0,
+        };
+        let sorted = adf_sorted_entries(vec![e("s"), e("c"), e("mygame")]);
+        let names: Vec<&str> = sorted.iter().map(|x| x.name.as_str()).collect();
+        assert_eq!(names, ["c", "mygame", "s"]);
+    }
+
+    #[test]
+    fn adf_info_json_shape() {
+        let entries = vec![
+            adf::Entry {
+                name: "c".to_owned(),
+                kind: adf::EntryKind::Directory,
+                size: 0,
+            },
+            adf::Entry {
+                name: "mygame".to_owned(),
+                kind: adf::EntryKind::File,
+                size: 51234,
+            },
+        ];
+        assert_eq!(
+            adf_info_json("d.adf", 901120, adf::FileSystem::Ofs, "MyGame", &entries),
+            "{\"tool\":\"adf\",\"command\":\"info\",\"input\":\"d.adf\",\"filesystem\":\"ofs\",\"label\":\"MyGame\",\"bytes\":901120,\"entries\":[{\"name\":\"c\",\"kind\":\"dir\",\"size\":0},{\"name\":\"mygame\",\"kind\":\"file\",\"size\":51234}]}"
+        );
+    }
+
+    #[test]
+    fn adf_verify_and_master_lines_match_the_standalone() {
+        assert_eq!(
+            adf_verify_json("d.adf", adf::FileSystem::Ffs, "MyGame"),
+            "{\"tool\":\"adf\",\"command\":\"verify\",\"input\":\"d.adf\",\"filesystem\":\"ffs\",\"label\":\"MyGame\",\"result\":\"ok\"}"
+        );
+        assert_eq!(
+            adf_master_text(
+                "flock.adf",
+                901120,
+                "Flock",
+                "flock",
+                adf::FileSystem::Ofs,
+                51234
+            ),
+            "flock.adf: 880K OFS disk \"Flock\", flock (51234 bytes)"
+        );
+        assert_eq!(
+            adf_master_json(
+                "flock.adf",
+                901120,
+                "Flock",
+                "flock",
+                adf::FileSystem::Ofs,
+                51234
+            ),
+            "{\"tool\":\"adf\",\"output\":\"flock.adf\",\"volume\":\"Flock\",\"file\":\"flock\",\"filesystem\":\"ofs\",\"bytes\":901120,\"exe_bytes\":51234}"
+        );
     }
 
     #[test]
