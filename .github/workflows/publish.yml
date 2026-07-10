@@ -1,0 +1,64 @@
+name: Publish
+
+# Publish the family's crates.io library crates when release-plz tags a release.
+#
+# Auth is crates.io Trusted Publishing (OIDC) — no stored token. Each crate must
+# have a trusted publisher configured at crates.io first (crate Settings ->
+# Trusted Publishing): repository build198x/build198x, workflow "publish.yml",
+# no environment. A brand-new crate can't be pre-configured there, so its FIRST
+# version is published manually with a scoped token; every release after this
+# runs here.
+#
+# Fires on the same release tags as cargo-dist's release.yml (release-plz's
+# build198x-vX.Y.Z). The two are independent and run in parallel: release.yml
+# builds the binaries and the GitHub Release; this publishes the libraries to
+# crates.io. release-plz itself stays publish = false — it only bumps and tags.
+#
+# Lockstep caveat: the workspace versions in lockstep, so each published crate
+# gets a new version on every release even when unchanged. Re-running an
+# already-published tag fails on "already exists" — expected, not a problem.
+
+on:
+  push:
+    tags:
+      - "**[0-9]+.[0-9]+.[0-9]+*"
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # required to mint the short-lived crates.io token via OIDC
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Read pinned toolchain
+        id: toolchain
+        run: |
+          channel=$(awk -F'"' '/^channel/{print $2}' rust-toolchain.toml)
+          echo "channel=${channel}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+
+      - name: Authenticate to crates.io (Trusted Publishing)
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      # Publish libraries in dependency order — a dependent needs its
+      # dependencies on crates.io first. Only format-commodore-amiga-adf is
+      # published today; add further crates below as each gains a trusted
+      # publisher (e.g. build198x-adf, after the library it depends on).
+      - name: Publish format-commodore-amiga-adf
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish -p format-commodore-amiga-adf
