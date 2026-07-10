@@ -12,6 +12,7 @@
 //! single JSON line on success; a diagnostic on stderr and a non-zero exit on
 //! failure. The `.adf` is written atomically (temp file, then rename).
 
+use format_commodore_amiga_adf::FileSystem;
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,6 +27,7 @@ fn run(args: &[String]) -> ExitCode {
     let mut out_path: Option<&String> = None;
     let mut volume: Option<String> = None;
     let mut name: Option<String> = None;
+    let mut fs = FileSystem::Ofs;
 
     let mut i = 0;
     while i < args.len() {
@@ -34,6 +36,8 @@ fn run(args: &[String]) -> ExitCode {
                 println!("{}", usage());
                 return ExitCode::SUCCESS;
             }
+            "--ffs" => fs = FileSystem::Ffs,
+            "--ofs" => fs = FileSystem::Ofs,
             "-o" | "--output" => {
                 i += 1;
                 match args.get(i) {
@@ -99,7 +103,7 @@ fn run(args: &[String]) -> ExitCode {
         }
     });
 
-    let img = match format_commodore_amiga_adf::master(&exe, &name, &volume) {
+    let img = match format_commodore_amiga_adf::master_fs(&exe, &name, &volume, fs) {
         Ok(img) => img,
         Err(e) => {
             eprintln!("build198x-adf: {e}");
@@ -113,10 +117,11 @@ fn run(args: &[String]) -> ExitCode {
     }
 
     println!(
-        "{{\"tool\":\"adf\",\"output\":\"{}\",\"volume\":\"{}\",\"file\":\"{}\",\"bytes\":{},\"exe_bytes\":{}}}",
+        "{{\"tool\":\"adf\",\"output\":\"{}\",\"volume\":\"{}\",\"file\":\"{}\",\"filesystem\":\"{}\",\"bytes\":{},\"exe_bytes\":{}}}",
         json_escape(out_path),
         json_escape(&volume),
         json_escape(&name),
+        fs.name(),
         img.len(),
         exe.len()
     );
@@ -129,16 +134,17 @@ fn arg_error(msg: &str) -> ExitCode {
 }
 
 fn usage() -> String {
-    "build198x-adf — master a hunk executable into a bootable OFS floppy\n\n\
+    "build198x-adf — master a hunk executable into a bootable Amiga floppy\n\n\
      Usage:\n\
-     \x20 build198x-adf <exe> -o <out.adf> [--volume <label>] [--name <file>]\n\n\
-     Writes an 880K OFS DD `.adf` that boots on a bare A500/KS1.3 straight\n\
-     into the program.\n\n\
+     \x20 build198x-adf <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs]\n\n\
+     Writes an 880K DD `.adf` that boots straight into the program. OFS is the\n\
+     default and boots on a bare A500/KS1.3; --ffs is denser but needs KS2.0+.\n\n\
      Options:\n\
      \x20 -o, --output <path>   the .adf to write (required)\n\
      \x20     --volume <label>  disk volume label (default: capitalised name)\n\
      \x20     --name <file>     on-disk file + startup-sequence command\n\
      \x20                       (default: the executable's basename)\n\
+     \x20     --ofs | --ffs     filesystem (default: --ofs; --ffs needs KS2.0+)\n\
      \x20 -h, --help            show this help"
         .to_owned()
 }

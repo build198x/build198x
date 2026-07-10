@@ -1423,6 +1423,7 @@ fn adf_command(args: &[String]) -> ExitCode {
     let mut out_path: Option<&String> = None;
     let mut volume: Option<String> = None;
     let mut name: Option<String> = None;
+    let mut fs = adf::FileSystem::Ofs;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -1430,6 +1431,8 @@ fn adf_command(args: &[String]) -> ExitCode {
                 println!("{}", adf_usage());
                 return ExitCode::SUCCESS;
             }
+            "--ffs" => fs = adf::FileSystem::Ffs,
+            "--ofs" => fs = adf::FileSystem::Ofs,
             "-o" | "--output" => {
                 i += 1;
                 match args.get(i) {
@@ -1495,7 +1498,7 @@ fn adf_command(args: &[String]) -> ExitCode {
         }
     });
 
-    let img = match adf::master(&exe, &name, &volume) {
+    let img = match adf::master_fs(&exe, &name, &volume, fs) {
         Ok(img) => img,
         Err(e) => {
             eprintln!("build198x adf: {e}");
@@ -1509,10 +1512,11 @@ fn adf_command(args: &[String]) -> ExitCode {
     }
 
     println!(
-        "{{\"tool\":\"adf\",\"output\":\"{}\",\"volume\":\"{}\",\"file\":\"{}\",\"bytes\":{},\"exe_bytes\":{}}}",
+        "{{\"tool\":\"adf\",\"output\":\"{}\",\"volume\":\"{}\",\"file\":\"{}\",\"filesystem\":\"{}\",\"bytes\":{},\"exe_bytes\":{}}}",
         json_escape(out_path),
         json_escape(&volume),
         json_escape(&name),
+        fs.name(),
         img.len(),
         exe.len()
     );
@@ -1526,16 +1530,18 @@ fn adf_arg_error(msg: &str) -> ExitCode {
 
 fn adf_usage() -> String {
     format!(
-        "{name} adf — master a hunk executable into a bootable OFS floppy\n\n\
+        "{name} adf — master a hunk executable into a bootable Amiga floppy\n\n\
          usage:\n\
-         \x20 {name} adf <exe> -o <out.adf> [--volume <label>] [--name <file>]\n\n\
-         Writes an 880K OFS DD `.adf` that boots on a bare A500/KS1.3 straight\n\
-         into the program. Deterministic (zeroed dates) — byte-stable output.\n\n\
+         \x20 {name} adf <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs]\n\n\
+         Writes an 880K DD `.adf` that boots straight into the program. OFS is\n\
+         the default (boots on a bare A500/KS1.3); --ffs is denser but needs\n\
+         KS2.0+. Deterministic (zeroed dates) — byte-stable output.\n\n\
          options:\n\
          \x20 -o, --output <path>   the .adf to write (required)\n\
          \x20 --volume <label>      disk label (default: capitalised file name)\n\
          \x20 --name <file>         on-disk file + startup-sequence command\n\
-         \x20                       (default: the executable's basename)",
+         \x20                       (default: the executable's basename)\n\
+         \x20 --ofs | --ffs         filesystem (default: --ofs; --ffs needs KS2.0+)",
         name = env!("CARGO_PKG_NAME")
     )
 }

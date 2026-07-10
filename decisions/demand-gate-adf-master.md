@@ -157,12 +157,39 @@ So the writer was made correct for *any* input within the OFS-DD shape:
   slot collision instead of clobbering, so any set of names is correct. Header
   checksums are deferred until after all inserts (an insert can set a header's
   `hash_chain`).
-- **Protection bits** documented (active-low RWED; cosmetic under KS1.3) rather
-  than changed — the value is byte-parity with the xdftool reference the boot
-  depends on.
+- **Protection bits** were left at the xdftool-copied `0x0d` here, documented as
+  "cosmetic under KS1.3" — **that was wrong, corrected 2026-07-10 below.**
 
 Verified by re-mastering + booting flock unit-18 and by unit tests for an
-extension-block file and a hash-collision insert. What remains out — FFS, the
-International/Dir-Cache variants, hard-disk layouts, multi-disk sets,
-multi-file/dir trees, and the read side — is the general-tool roadmap, each
-its own later scope; none is a curriculum need today.
+extension-block file and a hash-collision insert.
+
+## Extracted, FFS added, protection bug fixed (2026-07-10)
+
+Three follow-on changes made the master a standalone, portable, general tool:
+
+1. **Extracted to its own crate** `format-commodore-amiga-adf` (dependency-free,
+   GPL-2.0-or-later) so it can be consumed on its own — Emu198x's floppy read
+   path in time, and crates.io once the read side lands. `build198x adf` and a
+   new standalone `build198x-adf` binary both delegate to it. See
+   [`module-and-crate-naming.md`](module-and-crate-naming.md) (amended: an
+   external audience is a split-triggering consumer) and
+   [`../../../decisions/family-tools-are-general.md`](../../../decisions/family-tools-are-general.md).
+
+2. **FFS (`DOS\1`) added** alongside OFS, selected by a `FileSystem` argument
+   (and `--ffs` on both CLIs). FFS data blocks are raw 512-byte sectors with no
+   per-block header/chain, navigated entirely by the header/extension pointer
+   tables; the volume structure is identical to OFS. **FFS floppies boot only on
+   KS2.0+** — the 1.3 ROM's floppy filesystem is OFS-only — so the curriculum
+   stays OFS; FFS is a general-tool capability for KS2.0+ users.
+
+3. **Protection-bit bug fixed: `0x0d` → `0x00`.** Booting an FFS disk on KS2.04
+   surfaced `flock: file is read protected` — the RWED bits are active-low, and
+   `0x0d` revokes read, so the CLI could not `LoadSeg` the command. KS1.3 never
+   enforced this, which is why the OFS disks "worked" and the value looked
+   cosmetic. `0x00` (a normal readable/executable file) fixes it and makes the
+   **OFS disks portable to KS2.0+ too**, not just KS1.3. Verified: flock unit-18
+   boots to its title as OFS on KS1.3, and as both OFS and FFS on KS2.04.
+
+What remains out — the International/Dir-Cache variants, hard-disk (RDB)
+layouts, multi-disk sets, a general multi-file/dir tree API, and the read side
+— is the general-tool roadmap, each its own later scope.

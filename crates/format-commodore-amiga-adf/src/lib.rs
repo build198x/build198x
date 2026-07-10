@@ -1,31 +1,38 @@
-//! Amiga OFS bootable-floppy master.
+//! Amiga bootable-floppy master (OFS and FFS).
 //!
-//! Masters a Kickstart-1.x hunk executable into a bootable **Old File System**
-//! DD floppy image (880 KB) — the disk a bare A500/KS1.3 boots straight into,
-//! running the program from `s/startup-sequence`. This is the mastering half of
-//! the Amiga-assembly build (Asm198x emits the hunk exe; this writes the disk),
-//! per `Build198x/build198x/decisions/demand-gate-adf-master.md`.
+//! Masters a Kickstart-1.x hunk executable into a bootable DD floppy image
+//! (880 KB) — the disk an Amiga boots straight into, running the program from
+//! `s/startup-sequence`. This is the mastering half of the Amiga-assembly build
+//! (Asm198x emits the hunk exe; this writes the disk), per
+//! `Build198x/build198x/decisions/demand-gate-adf-master.md`.
+//!
+//! Both floppy filesystems are supported ([`FileSystem`]): **OFS** (`DOS\0`,
+//! the bare A500/KS1.3 default) and **FFS** (`DOS\1`, denser and faster, but
+//! bootable only on KS2.0+). They differ only in their data blocks; the volume
+//! structure is identical.
 //!
 //! **Deterministic** (the determinism contract): every date field is zeroed and
 //! block allocation is fixed, so the same exe + names always produce identical
 //! bytes — unlike xdftool, which stamps creation dates. That makes the committed
 //! `.adf` deliverables byte-reproducible.
 //!
-//! **General within one disk shape** — a bootable OFS DD floppy: the standard
-//! 1.x boot block, an `s/startup-sequence` that runs the program, and the
-//! executable. Within that shape it is correct for *any* input: a file of any
-//! size chains into extension blocks (not just the 72 that fit a header), names
-//! that hash to the same slot chain through the hash table, and a program too
-//! large for an 880 KB disk is a typed error rather than a corrupt image. FFS,
-//! the International/Dir-Cache variants, hard-disk layouts, and multi-disk sets
-//! are the remaining generality frontier — each its own later scope.
+//! **General within the DD-floppy shape** — the standard boot block, an
+//! `s/startup-sequence` that runs the program, and the executable. Within that
+//! shape it is correct for *any* input: a file of any size chains into
+//! extension blocks (not just the 72 that fit a header), names that hash to the
+//! same slot chain through the hash table, and a program too large for an
+//! 880 KB disk is a typed error rather than a corrupt image. The
+//! International/Dir-Cache variants, hard-disk (RDB) layouts, multi-disk sets,
+//! and the read side are the remaining generality frontier — each its own later
+//! scope.
 //!
 //! Layout facts were taken as ground truth from a known-good `xdftool` disk and
 //! cross-checked against ADFlib (adflib/ADFlib) and gadf (sphair/gadf, public
 //! domain). The block structures used:
 //!
-//! - **Boot block** (sectors 0–1): `DOS\0` + the fixed KS1.2+ boot code +
-//!   `dos.library`, with its own checksum — a constant, volume-independent blob.
+//! - **Boot block** (sectors 0–1): the DOS-type byte (`DOS\0` OFS / `DOS\1`
+//!   FFS) + the fixed KS1.2+ boot code + `dos.library`, with an add-with-carry
+//!   boot checksum. The bootstrap is a constant, volume-independent blob.
 //! - **Root block** (block 880): volume name, a 72-slot name-hash table of
 //!   top-level entries, the bitmap pointer, dates, and a block checksum.
 //! - **Bitmap block** (block 881): one bit per block (1 = free), checksum at
@@ -33,8 +40,9 @@
 //! - **Directory / file headers**: type `T_HEADER` (2); a directory's 72-slot
 //!   table holds child headers hashed by name, a file's holds its data-block
 //!   pointers in reverse; secondary type `ST_USERDIR` (2) or `ST_FILE` (−3).
-//! - **OFS data blocks**: a 24-byte header (`T_DATA`, header-key, 1-based
-//!   sequence, data size, next block, checksum) then up to 488 payload bytes.
+//! - **Data blocks**: OFS wraps each in a 24-byte header (`T_DATA`, header-key,
+//!   1-based sequence, data size, next block, checksum) then up to 488 payload
+//!   bytes; FFS stores a raw 512-byte sector and relies on the pointer tables.
 //!
 //! Pure byte-layout (`core`/`std` only), per `decisions/module-and-crate-naming.md`.
 
@@ -80,6 +88,55 @@ impl core::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Which Amiga filesystem to write.
+///
+/// The two differ only in their data blocks: [`Ofs`](Self::Ofs) wraps each in a
+/// 24-byte header (type/key/sequence/size/next/checksum), so a block holds 488
+/// payload bytes and the file is a self-describing chain; [`Ffs`](Self::Ffs)
+/// stores raw 512-byte sectors and relies entirely on the header/extension
+/// pointer tables. The root, bitmap, directory, and file-header blocks are
+/// identical between them.
+///
+/// **Boot compatibility:** an FFS floppy boots only on Kickstart 2.0+ — the 1.3
+/// ROM's floppy filesystem is OFS-only. Target OFS for a bare A500/KS1.3; FFS
+/// is for KS2.0+ machines (and is faster and denser there).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum FileSystem {
+    /// Old File System (`DOS\0`) — headered data blocks. Boots on KS1.3+.
+    #[default]
+    Ofs,
+    /// Fast File System (`DOS\1`) — raw data sectors. Boots on KS2.0+.
+    Ffs,
+}
+
+impl FileSystem {
+    /// The lowercase short name — `"ofs"` or `"ffs"`. Handy for CLI output and
+    /// logging without matching a `#[non_exhaustive]` enum.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ofs => "ofs",
+            Self::Ffs => "ffs",
+        }
+    }
+
+    /// The boot-block DOS-type byte (offset 3): 0 for OFS, 1 for FFS.
+    fn dos_type(self) -> u8 {
+        match self {
+            Self::Ofs => 0,
+            Self::Ffs => 1,
+        }
+    }
+
+    /// Payload bytes per data block: OFS reserves 24 for the block header.
+    fn data_capacity(self) -> usize {
+        match self {
+            Self::Ofs => OFS_DATA,
+            Self::Ffs => BSIZE,
+        }
+    }
+}
+
 /// Bytes per disk block (sector).
 const BSIZE: usize = 512;
 /// Blocks on a DD floppy: 80 cylinders × 2 heads × 11 sectors.
@@ -112,13 +169,19 @@ const ST_FILE: u32 = (-3i32) as u32;
 /// AmigaDOS name length limit.
 const MAX_NAME: usize = 30;
 
-/// Protection bits for the executable, read from a known-good `xdftool` disk.
-/// The low nibble is the RWED set, stored **active-low** — a set bit *revokes*
-/// that permission. `0x0d` (`1101`) revokes delete, write, and read and grants
-/// execute, listing as `------e-` in AmigaDOS's `hsparwed` display. KS1.3 does
-/// not enforce protection for LoadSeg, so the value is cosmetic for booting; it
-/// is kept byte-identical to xdftool's so mastered disks match the reference.
-const EXE_PROTECT: u32 = 0x0d;
+/// Protection bits for the executable. The low nibble is the RWED set, stored
+/// **active-low** — a set bit *revokes* that permission — so `0x00` grants read,
+/// write, execute, and delete: a normal, runnable file. The executable must be
+/// readable and executable, because the CLI `LoadSeg`s the command named in
+/// `startup-sequence`; revoking read breaks that on any Kickstart that enforces
+/// protection.
+///
+/// An earlier `0x0d` (read/write/delete revoked) was copied from an xdftool
+/// disk and *looked* fine because KS1.3 ignores protection on LoadSeg — but it
+/// fails on KS2.0+ with "file is read protected". See the demand-gate-adf-master
+/// decision log (2026-07-10). Fixing it also makes the OFS disks portable to
+/// KS2.0+, not just KS1.3.
+const EXE_PROTECT: u32 = 0x00;
 
 /// The standard KS1.2+ OFS boot block: `DOS\0`, its checksum, the boot code,
 /// and `dos.library`. 49 nonzero bytes; the rest of the 1024-byte boot area is
@@ -157,6 +220,33 @@ fn checksum(block: &[u8], chk_off: usize) -> u32 {
         i += 4;
     }
     sum.wrapping_neg()
+}
+
+/// The boot-block checksum over the 1024-byte boot area: add every longword
+/// with end-around carry, then complement. Distinct from [`checksum`] — the
+/// bootstrap ROM verifies the boot block with this add-with-carry variant.
+/// The caller zeroes the checksum field (offset 4) before calling.
+fn boot_checksum(boot: &[u8]) -> u32 {
+    let mut sum: u32 = 0;
+    let mut i = 0;
+    while i < 1024 {
+        let (s, carried) = sum.overflowing_add(read_u32(boot, i));
+        sum = if carried { s.wrapping_add(1) } else { s };
+        i += 4;
+    }
+    !sum
+}
+
+/// Write the boot block (sectors 0–1): the fixed bootstrap blob, the
+/// filesystem's DOS-type byte, and a freshly computed boot checksum. For OFS
+/// this reproduces the known-good blob byte-for-byte; for FFS it flips the type
+/// byte and recomputes.
+fn write_boot_block(img: &mut [u8], fs: FileSystem) {
+    img[..BOOT_PREFIX.len()].copy_from_slice(&BOOT_PREFIX);
+    img[3] = fs.dos_type();
+    put_u32(img, 4, 0); // zero the checksum field before computing
+    let c = boot_checksum(&img[..1024]);
+    put_u32(img, 4, c);
 }
 
 /// AmigaDOS filename hash → slot in a 72-entry table. `h = len; for each byte
@@ -224,21 +314,38 @@ fn ext_count(data_n: usize) -> usize {
     data_n.saturating_sub(1) / HT_SIZE
 }
 
-/// Write a file's chained OFS data blocks — any length.
-fn write_file_data(img: &mut [u8], header_key: u32, data_blocks: &[u32], payload: &[u8]) {
+/// Write a file's data blocks — any length. OFS wraps each block in a 24-byte
+/// header (type/key/sequence/size/next/checksum) and chains them; FFS writes
+/// raw 512-byte sectors, relying on the header/extension pointer tables for
+/// order.
+fn write_file_data(
+    img: &mut [u8],
+    fs: FileSystem,
+    header_key: u32,
+    data_blocks: &[u32],
+    payload: &[u8],
+) {
+    let cap = fs.data_capacity();
     for (i, &blk) in data_blocks.iter().enumerate() {
-        let start = i * OFS_DATA;
-        let chunk = &payload[start..(start + OFS_DATA).min(payload.len())];
-        let next = data_blocks.get(i + 1).copied().unwrap_or(0);
-        let b = block_mut(img, blk);
-        put_u32(b, 0, T_DATA);
-        put_u32(b, 4, header_key);
-        put_u32(b, 8, i as u32 + 1); // 1-based sequence
-        put_u32(b, 12, chunk.len() as u32);
-        put_u32(b, 16, next);
-        b[24..24 + chunk.len()].copy_from_slice(chunk);
-        let c = checksum(b, 20);
-        put_u32(block_mut(img, blk), 20, c);
+        let start = i * cap;
+        let chunk = &payload[start..(start + cap).min(payload.len())];
+        match fs {
+            FileSystem::Ffs => {
+                block_mut(img, blk)[..chunk.len()].copy_from_slice(chunk);
+            }
+            FileSystem::Ofs => {
+                let next = data_blocks.get(i + 1).copied().unwrap_or(0);
+                let b = block_mut(img, blk);
+                put_u32(b, 0, T_DATA);
+                put_u32(b, 4, header_key);
+                put_u32(b, 8, i as u32 + 1); // 1-based sequence
+                put_u32(b, 12, chunk.len() as u32);
+                put_u32(b, 16, next);
+                b[24..24 + chunk.len()].copy_from_slice(chunk);
+                let c = checksum(b, 20);
+                put_u32(block_mut(img, blk), 20, c);
+            }
+        }
     }
 }
 
@@ -298,17 +405,26 @@ fn write_file_header(
     }
 }
 
-/// Master `exe` (a KS1.x hunk executable) into a bootable OFS DD `.adf` that
-/// runs it. `name` is the file's on-disk name and the `startup-sequence`
-/// command; `volume` is the disk label. Returns the 901,120-byte image.
+/// Master `exe` (a KS1.x hunk executable) into a bootable OFS DD `.adf` — the
+/// bare A500/KS1.3 shape. Convenience for [`master_fs`] with
+/// [`FileSystem::Ofs`].
 pub fn master(exe: &[u8], name: &str, volume: &str) -> Result<Vec<u8>, Error> {
+    master_fs(exe, name, volume, FileSystem::Ofs)
+}
+
+/// Master `exe` (a KS1.x hunk executable) into a bootable DD `.adf` that runs
+/// it, on the chosen [`FileSystem`]. `name` is the file's on-disk name and the
+/// `startup-sequence` command; `volume` is the disk label. Returns the
+/// 901,120-byte image. (FFS boots on KS2.0+ only — see [`FileSystem`].)
+pub fn master_fs(exe: &[u8], name: &str, volume: &str, fs: FileSystem) -> Result<Vec<u8>, Error> {
     validate_name(name, "file name")?;
     validate_name(volume, "volume name")?;
 
     let startup = format!("{name}\n");
     let startup_bytes = startup.as_bytes();
-    let exe_data_n = exe.len().div_ceil(OFS_DATA).max(1);
-    let startup_data_n = startup_bytes.len().div_ceil(OFS_DATA).max(1);
+    let cap = fs.data_capacity();
+    let exe_data_n = exe.len().div_ceil(cap).max(1);
+    let startup_data_n = startup_bytes.len().div_ceil(cap).max(1);
 
     // Deterministic block allocation, upward from FIRST_FREE: each file is a
     // header, its extension blocks, then its data blocks.
@@ -337,12 +453,12 @@ pub fn master(exe: &[u8], name: &str, volume: &str) -> Result<Vec<u8>, Error> {
 
     let mut img = vec![0u8; BLOCKS as usize * BSIZE];
 
-    // Boot block (sectors 0-1): the constant blob.
-    img[..BOOT_PREFIX.len()].copy_from_slice(&BOOT_PREFIX);
+    // Boot block (sectors 0-1): bootstrap blob + filesystem type + checksum.
+    write_boot_block(&mut img, fs);
 
     // Data blocks, then file headers (+ extension blocks) — headers unchecksummed.
-    write_file_data(&mut img, startup_hdr_blk, &startup_data, startup_bytes);
-    write_file_data(&mut img, exe_hdr_blk, &exe_data, exe);
+    write_file_data(&mut img, fs, startup_hdr_blk, &startup_data, startup_bytes);
+    write_file_data(&mut img, fs, exe_hdr_blk, &exe_data, exe);
     write_file_header(
         &mut img,
         startup_hdr_blk,
@@ -447,6 +563,44 @@ mod tests {
         out
     }
 
+    /// Collect a header/extension block's data-block pointers, in file order
+    /// (the reverse-filled table, `high_seq` of them).
+    fn collect_ptrs(img: &[u8], blk: u32, out: &mut Vec<u32>) {
+        let b = block(img, blk);
+        let n = read_u32(b, 8) as usize;
+        for i in 0..n {
+            out.push(read_u32(b, 24 + 4 * (HT_SIZE - 1 - i)));
+        }
+    }
+
+    /// Read a top-level file by walking the header + extension pointer tables —
+    /// the way FFS (which has no per-data-block chain) and disk validators
+    /// navigate. Works for both filesystems.
+    fn read_file_via_ptrs(img: &[u8], name: &str, fs: FileSystem) -> Vec<u8> {
+        let hdr_blk = read_u32(block(img, ROOT_BLK), 24 + 4 * name_hash(name));
+        let size = read_u32(block(img, hdr_blk), BSIZE - 188) as usize;
+        let mut blocks = Vec::new();
+        collect_ptrs(img, hdr_blk, &mut blocks);
+        let mut ext = read_u32(block(img, hdr_blk), BSIZE - 8);
+        while ext != 0 {
+            collect_ptrs(img, ext, &mut blocks);
+            ext = read_u32(block(img, ext), BSIZE - 8);
+        }
+        let mut out = Vec::new();
+        for &b in &blocks {
+            match fs {
+                FileSystem::Ffs => out.extend_from_slice(block(img, b)),
+                FileSystem::Ofs => {
+                    let d = block(img, b);
+                    let n = read_u32(d, 12) as usize;
+                    out.extend_from_slice(&d[24..24 + n]);
+                }
+            }
+        }
+        out.truncate(size); // FFS's final sector is zero-padded to 512
+        out
+    }
+
     fn assert_checksums(img: &[u8], name: &str) {
         // Every header/data block used carries a valid offset-20 checksum;
         // the bitmap an offset-0 one.
@@ -494,6 +648,60 @@ mod tests {
         let img = master(&exe, "big", "Big").unwrap();
         assert_checksums(&img, "big");
         assert_eq!(read_file(&img, "big"), exe);
+    }
+
+    #[test]
+    fn boot_checksum_reproduces_the_ofs_reference() {
+        // Recomputing the OFS boot block must reproduce BOOT_PREFIX byte-for-byte
+        // — including the embedded reference checksum at offset 4. This both
+        // validates the add-with-carry algorithm and guards OFS byte-identity now
+        // that the boot block is built dynamically.
+        let mut img = vec![0u8; 1024];
+        write_boot_block(&mut img, FileSystem::Ofs);
+        assert_eq!(&img[..BOOT_PREFIX.len()], &BOOT_PREFIX[..]);
+        assert!(img[BOOT_PREFIX.len()..].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn round_trips_a_multi_block_ffs_file() {
+        // FFS: raw 512-byte sectors, no data-block header/chain — navigated
+        // entirely by the header/extension pointer tables. Force several blocks
+        // and a partial final sector.
+        let exe: Vec<u8> = (0..BSIZE * 3 + 137).map(|i| (i % 251) as u8).collect();
+        let img = master_fs(&exe, "ffsgame", "FfsGame", FileSystem::Ffs).unwrap();
+        assert_eq!(&img[0..4], b"DOS\x01", "FFS boot type");
+        // Volume structure (root/bitmap/headers) is identical to OFS and still
+        // checksums; the data blocks carry no checksum, by design.
+        assert_checksums(&img, "ffsgame");
+        assert_eq!(read_file_via_ptrs(&img, "ffsgame", FileSystem::Ffs), exe);
+        // The OFS reader (pointer tables) agrees with the chain reader on OFS,
+        // confirming the two navigation paths are consistent.
+        let ofs = master_fs(&exe, "ffsgame", "FfsGame", FileSystem::Ofs).unwrap();
+        assert_eq!(
+            read_file_via_ptrs(&ofs, "ffsgame", FileSystem::Ofs),
+            read_file(&ofs, "ffsgame")
+        );
+    }
+
+    #[test]
+    fn ffs_is_deterministic_and_denser_than_ofs() {
+        let exe = vec![0x5au8; 4000];
+        assert_eq!(
+            master_fs(&exe, "d", "D", FileSystem::Ffs).unwrap(),
+            master_fs(&exe, "d", "D", FileSystem::Ffs).unwrap()
+        );
+        // 4000 bytes: OFS needs ceil(4000/488)=9 data blocks, FFS ceil(4000/512)
+        // =8 — so the FFS image marks fewer blocks used. Compare bitmap free bits.
+        let free = |img: &[u8]| -> u32 {
+            (0..((BLOCKS - 2) as usize).div_ceil(32))
+                .map(|i| read_u32(block(img, BITMAP_BLK), 4 + 4 * i).count_ones())
+                .sum()
+        };
+        assert!(
+            free(&master_fs(&exe, "d", "D", FileSystem::Ffs).unwrap())
+                > free(&master(&exe, "d", "D").unwrap()),
+            "FFS should leave more blocks free than OFS for the same file"
+        );
     }
 
     #[test]
