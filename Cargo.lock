@@ -24,6 +24,7 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 name = "build198x"
 version = "0.2.0"
 dependencies = [
+ "format-commodore-amiga-adf",
  "image",
  "mediaspec",
 ]
@@ -79,6 +80,10 @@ dependencies = [
  "crc32fast",
  "miniz_oxide",
 ]
+
+[[package]]
+name = "format-commodore-amiga-adf"
+version = "0.2.0"
 
 [[package]]
 name = "gif"

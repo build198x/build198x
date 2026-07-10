@@ -38,7 +38,47 @@
 //!
 //! Pure byte-layout (`core`/`std` only), per `decisions/module-and-crate-naming.md`.
 
-use super::EncodeError;
+/// Why an ADF operation failed.
+///
+/// The write path validates its inputs rather than panicking. Marked
+/// `#[non_exhaustive]` because the read side (forthcoming) will add
+/// parse-failure variants without a breaking change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Error {
+    /// A file or volume name is empty, longer than 30 bytes, or not
+    /// AmigaDOS-legal (ASCII only).
+    InvalidName {
+        /// Which name was rejected — e.g. `"file name"`, `"volume name"`.
+        what: &'static str,
+        /// The length supplied.
+        len: usize,
+    },
+    /// The content does not fit on a double-density floppy. Counts are in
+    /// 512-byte blocks.
+    DiskFull {
+        /// Blocks the content requires.
+        needed: u32,
+        /// Blocks a DD floppy leaves free for the file tree.
+        available: u32,
+    },
+}
+
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidName { what, len } => {
+                write!(f, "{what}: must be 1..=30 ASCII bytes (got {len})")
+            }
+            Self::DiskFull { needed, available } => write!(
+                f,
+                "disk full: {needed} blocks needed, {available} free on an 880K floppy"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 /// Bytes per disk block (sector).
 const BSIZE: usize = 512;
@@ -139,13 +179,11 @@ fn put_name(block: &mut [u8], name: &str) {
     block[BSIZE - 79..BSIZE - 79 + name.len()].copy_from_slice(name.as_bytes());
 }
 
-fn validate_name(name: &str, what: &'static str) -> Result<(), EncodeError> {
+fn validate_name(name: &str, what: &'static str) -> Result<(), Error> {
     if name.is_empty() || name.len() > MAX_NAME || !name.is_ascii() {
-        return Err(EncodeError::ValueOutOfRange {
+        return Err(Error::InvalidName {
             what,
-            value: name.len() as u32,
-            min: 1,
-            max: MAX_NAME as u32,
+            len: name.len(),
         });
     }
     Ok(())
@@ -263,7 +301,7 @@ fn write_file_header(
 /// Master `exe` (a KS1.x hunk executable) into a bootable OFS DD `.adf` that
 /// runs it. `name` is the file's on-disk name and the `startup-sequence`
 /// command; `volume` is the disk label. Returns the 901,120-byte image.
-pub fn master(exe: &[u8], name: &str, volume: &str) -> Result<Vec<u8>, EncodeError> {
+pub fn master(exe: &[u8], name: &str, volume: &str) -> Result<Vec<u8>, Error> {
     validate_name(name, "file name")?;
     validate_name(volume, "volume name")?;
 
@@ -291,11 +329,9 @@ pub fn master(exe: &[u8], name: &str, volume: &str) -> Result<Vec<u8>, EncodeErr
 
     if used_end > BLOCKS {
         // The program plus its filesystem overhead doesn't fit on an 880K disk.
-        return Err(EncodeError::ValueOutOfRange {
-            what: "disk full (blocks required)",
-            value: used_end - 2,
-            min: 1,
-            max: BLOCKS - FIRST_FREE,
+        return Err(Error::DiskFull {
+            needed: used_end - FIRST_FREE,
+            available: BLOCKS - FIRST_FREE,
         });
     }
 

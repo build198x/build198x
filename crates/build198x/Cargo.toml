@@ -17,6 +17,10 @@ repository.workspace = true
 # its isa crates): release-plz's cargo-package step refuses a bare path dep,
 # and it bumps this requirement in lockstep on each release.
 mediaspec = { path = "../mediaspec", version = "0.2.0" }
+# The Amiga ADF disk-image library — extracted from format::adf so it can be
+# consumed on its own (Emu198x's floppy read path, crates.io). The `adf`
+# subcommand delegates to it.
+format-commodore-amiga-adf = { path = "../format-commodore-amiga-adf", version = "0.2.0" }
 # Decode + DynamicImage only. default-features = false keeps the decoder set
 # explicit (PNG is the byte-identical contract; JPEG/GIF are accepted
 # best-effort — decisions/determinism-contract.md) and keeps `rayon` out:

@@ -49,3 +49,12 @@ git_only = true
 [[package]]
 name = "mediaspec"
 git_tag_enable = false
+
+# format-commodore-amiga-adf: the Amiga ADF disk-image library (dependency-free;
+# a build198x dependency, and a crates.io candidate once the read side lands).
+# Bumps in lockstep but never tags — the standalone build198x-adf binary tags
+# separately when it lands. publish stays workspace-default (false) until the
+# read side is in; see decisions/, ADF publish task.
+[[package]]
+name = "format-commodore-amiga-adf"
+git_tag_enable = false
