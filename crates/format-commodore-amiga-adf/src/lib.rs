@@ -1,8 +1,10 @@
-//! Amiga bootable-floppy master (OFS and FFS).
+//! Amiga ADF disk-image writer (OFS and FFS).
 //!
-//! Masters a Kickstart-1.x hunk executable into a bootable DD floppy image
-//! (880 KB) — the disk an Amiga boots straight into, running the program from
-//! `s/startup-sequence`. This is the mastering half of the Amiga-assembly build
+//! Two entry points. [`Volume`] builds an arbitrary file/directory tree onto a
+//! DD floppy image (880 KB) — `add_file`/`add_dir`, then `build`. [`master`]
+//! (and [`master_fs`]) is the common special case: a Kickstart-1.x hunk
+//! executable plus a `startup-sequence` that runs it, the disk an Amiga boots
+//! straight into. This is the mastering half of the Amiga-assembly build
 //! (Asm198x emits the hunk exe; this writes the disk), per
 //! `Build198x/build198x/decisions/demand-gate-adf-master.md`.
 //!
@@ -16,15 +18,14 @@
 //! bytes — unlike xdftool, which stamps creation dates. That makes the committed
 //! `.adf` deliverables byte-reproducible.
 //!
-//! **General within the DD-floppy shape** — the standard boot block, an
-//! `s/startup-sequence` that runs the program, and the executable. Within that
-//! shape it is correct for *any* input: a file of any size chains into
-//! extension blocks (not just the 72 that fit a header), names that hash to the
-//! same slot chain through the hash table, and a program too large for an
-//! 880 KB disk is a typed error rather than a corrupt image. The
-//! International/Dir-Cache variants, hard-disk (RDB) layouts, multi-disk sets,
-//! and the read side are the remaining generality frontier — each its own later
-//! scope.
+//! **General within the DD-floppy shape** — any tree of files and directories,
+//! bootable or a plain data disk. It is correct for *any* input: a file of any
+//! size chains into extension blocks (not just the 72 that fit a header), names
+//! that hash to the same slot chain through the hash table, nested directories
+//! to any depth, and a tree too large for an 880 KB disk is a typed error
+//! rather than a corrupt image. The International/Dir-Cache variants, hard-disk
+//! (RDB) layouts, multi-disk sets, and the read side are the remaining
+//! generality frontier — each its own later scope.
 //!
 //! Layout facts were taken as ground truth from a known-good `xdftool` disk and
 //! cross-checked against ADFlib (adflib/ADFlib) and gadf (sphair/gadf, public
@@ -70,6 +71,14 @@ pub enum Error {
         /// Blocks a DD floppy leaves free for the file tree.
         available: u32,
     },
+    /// A path passed to [`Volume`] could not be used — it is empty, already
+    /// exists, or routes a directory through a file.
+    BadPath {
+        /// The offending path.
+        path: String,
+        /// Why it was rejected.
+        reason: &'static str,
+    },
 }
 
 impl core::fmt::Display for Error {
@@ -82,6 +91,7 @@ impl core::fmt::Display for Error {
                 f,
                 "disk full: {needed} blocks needed, {available} free on an 880K floppy"
             ),
+            Self::BadPath { path, reason } => write!(f, "bad path {path:?}: {reason}"),
         }
     }
 }
@@ -237,12 +247,17 @@ fn boot_checksum(boot: &[u8]) -> u32 {
     !sum
 }
 
-/// Write the boot block (sectors 0–1): the fixed bootstrap blob, the
-/// filesystem's DOS-type byte, and a freshly computed boot checksum. For OFS
-/// this reproduces the known-good blob byte-for-byte; for FFS it flips the type
-/// byte and recomputes.
-fn write_boot_block(img: &mut [u8], fs: FileSystem) {
-    img[..BOOT_PREFIX.len()].copy_from_slice(&BOOT_PREFIX);
+/// Write the boot block (sectors 0–1): the DOS-type marker, the filesystem's
+/// type byte, and a freshly computed boot checksum. A `bootable` disk also
+/// carries the fixed bootstrap blob (reproduced byte-for-byte for OFS); a data
+/// disk gets only `DOS` + type + checksum — mountable, but the ROM finds no
+/// bootstrap to run.
+fn write_boot_block(img: &mut [u8], fs: FileSystem, bootable: bool) {
+    if bootable {
+        img[..BOOT_PREFIX.len()].copy_from_slice(&BOOT_PREFIX);
+    } else {
+        img[0..4].copy_from_slice(b"DOS\0");
+    }
     img[3] = fs.dos_type();
     put_u32(img, 4, 0); // zero the checksum field before computing
     let c = boot_checksum(&img[..1024]);
@@ -378,7 +393,7 @@ fn write_file_header(
         put_u32(b, 0, T_HEADER);
         put_u32(b, 4, hdr); // own block number
         put_u32(b, 8, first.len() as u32); // high_seq: pointers in this block
-        put_u32(b, 16, data_blocks[0]); // first_data
+        put_u32(b, 16, data_blocks.first().copied().unwrap_or(0)); // first_data (0 if empty)
         put_u32(b, BSIZE - 192, protect);
         put_u32(b, BSIZE - 188, byte_size);
         put_name(b, name);
@@ -416,127 +431,355 @@ pub fn master(exe: &[u8], name: &str, volume: &str) -> Result<Vec<u8>, Error> {
 /// it, on the chosen [`FileSystem`]. `name` is the file's on-disk name and the
 /// `startup-sequence` command; `volume` is the disk label. Returns the
 /// 901,120-byte image. (FFS boots on KS2.0+ only — see [`FileSystem`].)
+///
+/// A convenience over [`Volume`] for the one-executable bootable disk; use
+/// `Volume` directly for arbitrary file/directory trees.
 pub fn master_fs(exe: &[u8], name: &str, volume: &str, fs: FileSystem) -> Result<Vec<u8>, Error> {
     validate_name(name, "file name")?;
-    validate_name(volume, "volume name")?;
+    let mut vol = Volume::new(volume, fs);
+    // `s/startup-sequence` is added before the executable so the block layout
+    // matches the historical single-exe master exactly — byte-stable output.
+    vol.add_file("s/startup-sequence", format!("{name}\n").as_bytes())?;
+    vol.add_file(name, exe)?;
+    vol.set_bootable(true);
+    vol.build()
+}
 
-    let startup = format!("{name}\n");
-    let startup_bytes = startup.as_bytes();
-    let cap = fs.data_capacity();
-    let exe_data_n = exe.len().div_ceil(cap).max(1);
-    let startup_data_n = startup_bytes.len().div_ceil(cap).max(1);
+/// A directory in the volume tree: named children in insertion order.
+#[derive(Default)]
+struct DirNode {
+    entries: Vec<(String, Child)>,
+}
 
-    // Deterministic block allocation, upward from FIRST_FREE: each file is a
-    // header, its extension blocks, then its data blocks.
-    let mut next = FIRST_FREE;
-    let mut alloc = |count: u32| {
-        let base = next;
-        next += count;
-        base
-    };
-    let s_dir_blk = alloc(1);
-    let startup_hdr_blk = alloc(1);
-    let startup_ext: Vec<u32> = (0..ext_count(startup_data_n)).map(|_| alloc(1)).collect();
-    let startup_data: Vec<u32> = (0..startup_data_n).map(|_| alloc(1)).collect();
-    let exe_hdr_blk = alloc(1);
-    let exe_ext: Vec<u32> = (0..ext_count(exe_data_n)).map(|_| alloc(1)).collect();
-    let exe_data: Vec<u32> = (0..exe_data_n).map(|_| alloc(1)).collect();
-    let used_end = next; // FIRST_FREE..used_end are the file-tree blocks
+enum Child {
+    File { bytes: Vec<u8>, protect: u32 },
+    Dir(DirNode),
+}
 
-    if used_end > BLOCKS {
-        // The program plus its filesystem overhead doesn't fit on an 880K disk.
-        return Err(Error::DiskFull {
-            needed: used_end - FIRST_FREE,
-            available: BLOCKS - FIRST_FREE,
+impl DirNode {
+    /// Get-or-create a child directory named `name`; error if a *file* already
+    /// occupies that name.
+    fn dir_child(&mut self, name: &str, path: &str) -> Result<&mut DirNode, Error> {
+        if let Some(i) = self.entries.iter().position(|(n, _)| n == name) {
+            match &mut self.entries[i].1 {
+                Child::Dir(d) => Ok(d),
+                Child::File { .. } => Err(Error::BadPath {
+                    path: path.to_owned(),
+                    reason: "a path component is a file, not a directory",
+                }),
+            }
+        } else {
+            self.entries
+                .push((name.to_owned(), Child::Dir(DirNode::default())));
+            match &mut self.entries.last_mut().unwrap().1 {
+                Child::Dir(d) => Ok(d),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    fn has(&self, name: &str) -> bool {
+        self.entries.iter().any(|(n, _)| n == name)
+    }
+}
+
+/// Split a slash-separated path into validated, non-empty components.
+fn split_path(path: &str) -> Result<Vec<String>, Error> {
+    let parts: Vec<String> = path
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if parts.is_empty() {
+        return Err(Error::BadPath {
+            path: path.to_owned(),
+            reason: "empty path",
         });
     }
-
-    let mut img = vec![0u8; BLOCKS as usize * BSIZE];
-
-    // Boot block (sectors 0-1): bootstrap blob + filesystem type + checksum.
-    write_boot_block(&mut img, fs);
-
-    // Data blocks, then file headers (+ extension blocks) — headers unchecksummed.
-    write_file_data(&mut img, fs, startup_hdr_blk, &startup_data, startup_bytes);
-    write_file_data(&mut img, fs, exe_hdr_blk, &exe_data, exe);
-    write_file_header(
-        &mut img,
-        startup_hdr_blk,
-        &startup_ext,
-        "startup-sequence",
-        s_dir_blk,
-        &startup_data,
-        startup_bytes.len() as u32,
-        0,
-    );
-    write_file_header(
-        &mut img,
-        exe_hdr_blk,
-        &exe_ext,
-        name,
-        ROOT_BLK,
-        &exe_data,
-        exe.len() as u32,
-        EXE_PROTECT,
-    );
-
-    // `s/` directory header (structure only; the entry is inserted below).
-    {
-        let b = block_mut(&mut img, s_dir_blk);
-        put_u32(b, 0, T_HEADER);
-        put_u32(b, 4, s_dir_blk); // own block
-        put_name(b, "s");
-        put_u32(b, BSIZE - 12, ROOT_BLK); // parent
-        put_u32(b, BSIZE - 4, ST_USERDIR);
+    for p in &parts {
+        validate_name(p, "path component")?;
     }
+    Ok(parts)
+}
 
-    // Root block (structure only; entries inserted below).
-    {
-        let b = block_mut(&mut img, ROOT_BLK);
-        put_u32(b, 0, T_HEADER);
-        put_u32(b, 12, HT_SIZE as u32); // hash-table size (root only)
-        put_u32(b, BSIZE - 200, 0xffff_ffff); // bitmap flag: valid
-        put_u32(b, BSIZE - 196, BITMAP_BLK); // bm_pages[0]
-        put_name(b, volume);
-        put_u32(b, BSIZE - 4, ST_ROOT);
-    }
+/// A double-density Amiga floppy volume you fill with files and directories,
+/// then [`build`](Volume::build) into a deterministic 880 KB `.adf` image.
+///
+/// ```
+/// use format_commodore_amiga_adf::{FileSystem, Volume};
+/// let mut vol = Volume::new("MyDisk", FileSystem::Ofs);
+/// vol.add_file("c/hello", b"...").unwrap();
+/// vol.add_file("s/startup-sequence", b"c/hello\n").unwrap();
+/// vol.set_bootable(true);
+/// let adf = vol.build().unwrap();
+/// assert_eq!(adf.len(), 901_120);
+/// ```
+pub struct Volume {
+    label: String,
+    fs: FileSystem,
+    bootable: bool,
+    root: DirNode,
+}
 
-    // Insert entries into their parents (chaining on any hash collision), then
-    // checksum every header — an insert can set a header's `hash_chain`.
-    dir_insert(&mut img, s_dir_blk, startup_hdr_blk, "startup-sequence");
-    dir_insert(&mut img, ROOT_BLK, s_dir_blk, "s");
-    dir_insert(&mut img, ROOT_BLK, exe_hdr_blk, name);
-    for blk in [ROOT_BLK, s_dir_blk, startup_hdr_blk, exe_hdr_blk] {
-        let c = checksum(block(&img, blk), 20);
-        put_u32(block_mut(&mut img, blk), 20, c);
-    }
-
-    // Bitmap block: 1 = free. Mark the used blocks used.
-    {
-        let words = ((BLOCKS - 2) as usize).div_ceil(32); // blocks 2..BLOCKS
-        let mut map = vec![0xffff_ffffu32; words];
-        let mut mark_used = |n: u32| {
-            let i = (n - 2) as usize;
-            map[i / 32] &= !(1u32 << (i % 32));
-        };
-        mark_used(ROOT_BLK);
-        mark_used(BITMAP_BLK);
-        for n in FIRST_FREE..used_end {
-            mark_used(n);
+impl Volume {
+    /// A new, empty volume with the given label and filesystem. Not bootable
+    /// until [`set_bootable(true)`](Volume::set_bootable).
+    pub fn new(label: &str, fs: FileSystem) -> Self {
+        Volume {
+            label: label.to_owned(),
+            fs,
+            bootable: false,
+            root: DirNode::default(),
         }
-        // Bits past the last real block (BLOCKS-1) don't exist: mark used.
-        for n in BLOCKS..(2 + words as u32 * 32) {
-            mark_used(n);
-        }
-        let b = block_mut(&mut img, BITMAP_BLK);
-        for (i, w) in map.iter().enumerate() {
-            put_u32(b, 4 + 4 * i, *w);
-        }
-        let c = checksum(b, 0);
-        put_u32(block_mut(&mut img, BITMAP_BLK), 0, c);
     }
 
-    Ok(img)
+    /// Set whether the disk carries the boot bootstrap. A bootable disk runs
+    /// `s/startup-sequence`; a data disk is mountable but does not boot.
+    pub fn set_bootable(&mut self, bootable: bool) -> &mut Self {
+        self.bootable = bootable;
+        self
+    }
+
+    /// Add a file at `path` (slash-separated, e.g. `"s/startup-sequence"`),
+    /// creating any intermediate directories. Protection defaults to a normal
+    /// readable/executable file; use [`add_file_with_protection`] to override.
+    ///
+    /// [`add_file_with_protection`]: Volume::add_file_with_protection
+    pub fn add_file(&mut self, path: &str, bytes: &[u8]) -> Result<&mut Self, Error> {
+        self.add_file_with_protection(path, bytes, EXE_PROTECT)
+    }
+
+    /// Add a file with explicit AmigaDOS protection bits (active-low RWED; see
+    /// the crate docs). Otherwise like [`add_file`](Volume::add_file).
+    pub fn add_file_with_protection(
+        &mut self,
+        path: &str,
+        bytes: &[u8],
+        protect: u32,
+    ) -> Result<&mut Self, Error> {
+        let parts = split_path(path)?;
+        let (dirs, leaf) = parts.split_at(parts.len() - 1);
+        let leaf = &leaf[0];
+        let mut cur = &mut self.root;
+        for d in dirs {
+            cur = cur.dir_child(d, path)?;
+        }
+        if cur.has(leaf) {
+            return Err(Error::BadPath {
+                path: path.to_owned(),
+                reason: "already exists",
+            });
+        }
+        cur.entries.push((
+            leaf.clone(),
+            Child::File {
+                bytes: bytes.to_vec(),
+                protect,
+            },
+        ));
+        Ok(self)
+    }
+
+    /// Add an explicit (possibly empty) directory at `path`, creating any
+    /// intermediate directories. Idempotent for an existing directory; errors
+    /// if a file already occupies the path.
+    pub fn add_dir(&mut self, path: &str) -> Result<&mut Self, Error> {
+        let parts = split_path(path)?;
+        let mut cur = &mut self.root;
+        for p in &parts {
+            cur = cur.dir_child(p, path)?;
+        }
+        Ok(self)
+    }
+
+    /// Build the deterministic `.adf` image (901,120 bytes). Errors only if the
+    /// tree does not fit on an 880 KB disk or the volume label is invalid.
+    pub fn build(&self) -> Result<Vec<u8>, Error> {
+        validate_name(&self.label, "volume name")?;
+
+        // Plan: assign blocks to every directory header, file header, file
+        // extension block, and data block, in a deterministic pre-order walk.
+        let mut planned: Vec<Planned> = Vec::new();
+        let mut next = FIRST_FREE;
+        plan_dir(&self.root, ROOT_BLK, self.fs, &mut next, &mut planned);
+        let used_end = next; // FIRST_FREE..used_end are the file-tree blocks
+
+        if used_end > BLOCKS {
+            return Err(Error::DiskFull {
+                needed: used_end - FIRST_FREE,
+                available: BLOCKS - FIRST_FREE,
+            });
+        }
+
+        let mut img = vec![0u8; BLOCKS as usize * BSIZE];
+        write_boot_block(&mut img, self.fs, self.bootable);
+
+        // Data blocks + headers (headers unchecksummed; an insert may set a
+        // header's hash_chain).
+        for p in &planned {
+            match p {
+                Planned::File {
+                    hdr,
+                    ext,
+                    data,
+                    parent,
+                    name,
+                    bytes,
+                    protect,
+                } => {
+                    write_file_data(&mut img, self.fs, *hdr, data, bytes);
+                    write_file_header(
+                        &mut img,
+                        *hdr,
+                        ext,
+                        name,
+                        *parent,
+                        data,
+                        bytes.len() as u32,
+                        *protect,
+                    );
+                }
+                Planned::Dir { hdr, parent, name } => {
+                    let b = block_mut(&mut img, *hdr);
+                    put_u32(b, 0, T_HEADER);
+                    put_u32(b, 4, *hdr); // own block
+                    put_name(b, name);
+                    put_u32(b, BSIZE - 12, *parent);
+                    put_u32(b, BSIZE - 4, ST_USERDIR);
+                }
+            }
+        }
+
+        // Root block (structure only; entries inserted below).
+        {
+            let b = block_mut(&mut img, ROOT_BLK);
+            put_u32(b, 0, T_HEADER);
+            put_u32(b, 12, HT_SIZE as u32); // hash-table size (root only)
+            put_u32(b, BSIZE - 200, 0xffff_ffff); // bitmap flag: valid
+            put_u32(b, BSIZE - 196, BITMAP_BLK); // bm_pages[0]
+            put_name(b, &self.label);
+            put_u32(b, BSIZE - 4, ST_ROOT);
+        }
+
+        // Insert every entry into its parent (in pre-order, so sibling chain
+        // order on a hash collision is deterministic), then checksum all
+        // headers — an insert can set a header's hash_chain.
+        for p in &planned {
+            let (parent, hdr, name) = p.link();
+            dir_insert(&mut img, parent, hdr, name);
+        }
+        let c = checksum(block(&img, ROOT_BLK), 20);
+        put_u32(block_mut(&mut img, ROOT_BLK), 20, c);
+        for p in &planned {
+            let (_, hdr, _) = p.link();
+            let c = checksum(block(&img, hdr), 20);
+            put_u32(block_mut(&mut img, hdr), 20, c);
+        }
+
+        // Bitmap block: 1 = free. Mark the used blocks used.
+        {
+            let words = ((BLOCKS - 2) as usize).div_ceil(32); // blocks 2..BLOCKS
+            let mut map = vec![0xffff_ffffu32; words];
+            let mut mark_used = |n: u32| {
+                let i = (n - 2) as usize;
+                map[i / 32] &= !(1u32 << (i % 32));
+            };
+            mark_used(ROOT_BLK);
+            mark_used(BITMAP_BLK);
+            for n in FIRST_FREE..used_end {
+                mark_used(n);
+            }
+            // Bits past the last real block (BLOCKS-1) don't exist: mark used.
+            for n in BLOCKS..(2 + words as u32 * 32) {
+                mark_used(n);
+            }
+            let b = block_mut(&mut img, BITMAP_BLK);
+            for (i, w) in map.iter().enumerate() {
+                put_u32(b, 4 + 4 * i, *w);
+            }
+            let c = checksum(b, 0);
+            put_u32(block_mut(&mut img, BITMAP_BLK), 0, c);
+        }
+
+        Ok(img)
+    }
+}
+
+/// A tree node with its assigned blocks, ready to write.
+enum Planned<'a> {
+    File {
+        hdr: u32,
+        ext: Vec<u32>,
+        data: Vec<u32>,
+        parent: u32,
+        name: &'a str,
+        bytes: &'a [u8],
+        protect: u32,
+    },
+    Dir {
+        hdr: u32,
+        parent: u32,
+        name: &'a str,
+    },
+}
+
+impl Planned<'_> {
+    /// The (parent, own-header, name) triple every node inserts into its parent.
+    fn link(&self) -> (u32, u32, &str) {
+        match self {
+            Planned::File {
+                parent, hdr, name, ..
+            } => (*parent, *hdr, name),
+            Planned::Dir { parent, hdr, name } => (*parent, *hdr, name),
+        }
+    }
+}
+
+/// Take `n` consecutive blocks from the allocation cursor, returning the first.
+fn take_blocks(next: &mut u32, n: u32) -> u32 {
+    let base = *next;
+    *next += n;
+    base
+}
+
+/// Assign blocks to `dir`'s subtree, pre-order, appending to `out`.
+fn plan_dir<'a>(
+    dir: &'a DirNode,
+    parent: u32,
+    fs: FileSystem,
+    next: &mut u32,
+    out: &mut Vec<Planned<'a>>,
+) {
+    for (name, child) in &dir.entries {
+        match child {
+            Child::File { bytes, protect } => {
+                let hdr = take_blocks(next, 1);
+                let data_n = if bytes.is_empty() {
+                    0
+                } else {
+                    bytes.len().div_ceil(fs.data_capacity())
+                };
+                let ext: Vec<u32> = (0..ext_count(data_n))
+                    .map(|_| take_blocks(next, 1))
+                    .collect();
+                let data: Vec<u32> = (0..data_n).map(|_| take_blocks(next, 1)).collect();
+                out.push(Planned::File {
+                    hdr,
+                    ext,
+                    data,
+                    parent,
+                    name,
+                    bytes,
+                    protect: *protect,
+                });
+            }
+            Child::Dir(sub) => {
+                let hdr = take_blocks(next, 1);
+                out.push(Planned::Dir { hdr, parent, name });
+                plan_dir(sub, hdr, fs, next, out);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -573,11 +816,41 @@ mod tests {
         }
     }
 
-    /// Read a top-level file by walking the header + extension pointer tables —
+    /// A header/dir block's AmigaDOS name.
+    fn header_name(img: &[u8], blk: u32) -> String {
+        let b = block(img, blk);
+        let len = b[BSIZE - 80] as usize;
+        String::from_utf8_lossy(&b[BSIZE - 79..BSIZE - 79 + len]).into_owned()
+    }
+
+    /// Find `name` in directory `dir`, following the hash chain on a collision.
+    fn lookup(img: &[u8], dir: u32, name: &str) -> u32 {
+        let mut e = read_u32(block(img, dir), 24 + 4 * name_hash(name));
+        while e != 0 {
+            if header_name(img, e) == name {
+                return e;
+            }
+            e = read_u32(block(img, e), BSIZE - 16); // hash_chain
+        }
+        0
+    }
+
+    /// Resolve a slash-separated path to its header block — a miniature read
+    /// side, walking directory hash tables and hash chains.
+    fn resolve(img: &[u8], path: &str) -> u32 {
+        let mut blk = ROOT_BLK;
+        for comp in path.split('/').filter(|s| !s.is_empty()) {
+            blk = lookup(img, blk, comp);
+            assert!(blk != 0, "path component {comp:?} not found");
+        }
+        blk
+    }
+
+    /// Read a file at `path` by walking the header + extension pointer tables —
     /// the way FFS (which has no per-data-block chain) and disk validators
-    /// navigate. Works for both filesystems.
-    fn read_file_via_ptrs(img: &[u8], name: &str, fs: FileSystem) -> Vec<u8> {
-        let hdr_blk = read_u32(block(img, ROOT_BLK), 24 + 4 * name_hash(name));
+    /// navigate. Works for both filesystems and any depth.
+    fn read_file_via_ptrs(img: &[u8], path: &str, fs: FileSystem) -> Vec<u8> {
+        let hdr_blk = resolve(img, path);
         let size = read_u32(block(img, hdr_blk), BSIZE - 188) as usize;
         let mut blocks = Vec::new();
         collect_ptrs(img, hdr_blk, &mut blocks);
@@ -657,7 +930,7 @@ mod tests {
         // validates the add-with-carry algorithm and guards OFS byte-identity now
         // that the boot block is built dynamically.
         let mut img = vec![0u8; 1024];
-        write_boot_block(&mut img, FileSystem::Ofs);
+        write_boot_block(&mut img, FileSystem::Ofs, true);
         assert_eq!(&img[..BOOT_PREFIX.len()], &BOOT_PREFIX[..]);
         assert!(img[BOOT_PREFIX.len()..].iter().all(|&b| b == 0));
     }
@@ -772,6 +1045,99 @@ mod tests {
             master(&exe, "d", "D").unwrap(),
             master(&exe, "d", "D").unwrap()
         );
+    }
+
+    #[test]
+    fn volume_writes_a_nested_multi_file_tree() {
+        let mut vol = Volume::new("Tree", FileSystem::Ofs);
+        vol.add_file("readme", b"top-level file\n").unwrap();
+        vol.add_file("c/list", &vec![0x42u8; 2000]).unwrap(); // multi-block, nested
+        vol.add_file("c/util/deep", b"deeply nested\n").unwrap(); // two dirs down
+        vol.add_file("s/startup-sequence", b"c/list\n").unwrap();
+        vol.set_bootable(true);
+        let img = vol.build().unwrap();
+
+        assert_eq!(
+            read_file_via_ptrs(&img, "readme", FileSystem::Ofs),
+            b"top-level file\n"
+        );
+        assert_eq!(
+            read_file_via_ptrs(&img, "c/list", FileSystem::Ofs),
+            vec![0x42u8; 2000]
+        );
+        assert_eq!(
+            read_file_via_ptrs(&img, "c/util/deep", FileSystem::Ofs),
+            b"deeply nested\n"
+        );
+        assert_eq!(
+            read_file_via_ptrs(&img, "s/startup-sequence", FileSystem::Ofs),
+            b"c/list\n"
+        );
+        // Intermediate paths are directories.
+        assert_eq!(
+            read_u32(block(&img, resolve(&img, "c")), BSIZE - 4),
+            ST_USERDIR
+        );
+        assert_eq!(
+            read_u32(block(&img, resolve(&img, "c/util")), BSIZE - 4),
+            ST_USERDIR
+        );
+        assert!(vol.build().unwrap() == img, "deterministic");
+    }
+
+    #[test]
+    fn volume_rejects_bad_paths() {
+        let mut vol = Volume::new("V", FileSystem::Ofs);
+        vol.add_file("a", b"1").unwrap();
+        assert!(matches!(
+            vol.add_file("a", b"2"),
+            Err(Error::BadPath { .. })
+        )); // duplicate
+        assert!(matches!(
+            vol.add_file("a/b", b"3"),
+            Err(Error::BadPath { .. })
+        )); // through a file
+        assert!(matches!(vol.add_file("", b"x"), Err(Error::BadPath { .. }))); // empty
+        assert!(
+            vol.add_file(&format!("{}/x", "n".repeat(31)), b"y")
+                .is_err()
+        ); // bad component
+    }
+
+    #[test]
+    fn data_disk_is_mountable_but_not_bootable() {
+        let mut vol = Volume::new("Data", FileSystem::Ofs);
+        vol.add_file("notes", b"hello\n").unwrap();
+        let img = vol.build().unwrap(); // bootable defaults to false
+        assert_eq!(&img[0..4], b"DOS\0");
+        // The boot checksum is valid, but there is no bootstrap to run.
+        let mut probe = img[..1024].to_vec();
+        put_u32(&mut probe, 4, 0);
+        assert_eq!(
+            boot_checksum(&probe),
+            read_u32(&img, 4),
+            "data-disk boot checksum"
+        );
+        assert!(
+            img[8..1024].iter().all(|&b| b == 0),
+            "no bootstrap on a data disk"
+        );
+        assert_eq!(
+            read_file_via_ptrs(&img, "notes", FileSystem::Ofs),
+            b"hello\n"
+        );
+    }
+
+    #[test]
+    fn volume_handles_empty_files() {
+        let mut vol = Volume::new("E", FileSystem::Ofs);
+        vol.add_file("empty", b"").unwrap();
+        let img = vol.build().unwrap();
+        let hdr = resolve(&img, "empty");
+        assert_eq!(read_u32(block(&img, hdr), BSIZE - 188), 0, "byte_size 0");
+        assert_eq!(read_u32(block(&img, hdr), 16), 0, "first_data 0");
+        assert_eq!(read_u32(block(&img, hdr), 8), 0, "high_seq 0");
+        assert!(read_file_via_ptrs(&img, "empty", FileSystem::Ofs).is_empty());
     }
 
     #[test]

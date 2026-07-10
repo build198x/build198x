@@ -190,6 +190,20 @@ Three follow-on changes made the master a standalone, portable, general tool:
    **OFS disks portable to KS2.0+ too**, not just KS1.3. Verified: flock unit-18
    boots to its title as OFS on KS1.3, and as both OFS and FFS on KS2.04.
 
+## General multi-file/directory API (2026-07-10)
+
+The single-exe master was generalised into a `Volume` builder: `add_file(path,
+bytes)` / `add_dir(path)` create arbitrary nested trees (any depth,
+auto-created intermediate directories, per-file protection), `set_bootable`
+chooses a bootable vs data disk, and `build` emits the deterministic image.
+`master`/`master_fs` are now thin conveniences over it — verified **byte-
+identical** to the previous single-exe output, so nothing regressed. Empty
+files, duplicate/File-through-path errors (`Error::BadPath`), and non-bootable
+data disks are handled. Verified end-to-end: a two-directory disk (a command in
+`c/`, run from `s/startup-sequence`) boots to its title on KS1.3; unit tests
+cover nested trees, data disks, and empty files; an `examples/multi_file_disk`
+doubles as a crates.io example.
+
 What remains out — the International/Dir-Cache variants, hard-disk (RDB)
-layouts, multi-disk sets, a general multi-file/dir tree API, and the read side
-— is the general-tool roadmap, each its own later scope.
+layouts, multi-disk sets, and the read side — is the general-tool roadmap, each
+its own later scope.
