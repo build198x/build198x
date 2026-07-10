@@ -10,6 +10,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["amiga", "adf", "floppy", "ofs", "ffs"]
+categories = ["command-line-utilities", "filesystem", "emulators"]
 
 [dependencies]
 # The ADF library now lives in the format198x org; consumed from crates.io.
