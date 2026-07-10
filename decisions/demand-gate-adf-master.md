@@ -1,8 +1,9 @@
 # Decision: the ADF master — Amiga assembly's bootable-disk packaging books the media-mastering lane
 
-**Status:** Active (blessed by Steve 2026-07-10). Gate opened; the tool is not
-yet started — this record is the placement and reasoning, and the build is now
-unblocked. The placement follows the resolved tape/framing seam
+**Status:** Active — **built 2026-07-10** (`build198x adf` / `format::adf`) and
+wired into the Amiga-assembly capture path, retiring the last `commodore-amiga`
+Docker image. Bounded from-scratch (the Rust ADF-write crates stop short), no
+deps, deterministic. The placement follows the resolved tape/framing seam
 ([`tape-framing-vs-mastering.md`](../../../decisions/tape-framing-vs-mastering.md)).
 
 **Date:** 2026-07-09.
@@ -120,3 +121,22 @@ half. A structural read-back (adflib/xdftool) is a useful secondary check.
 **Ingest contract:** raw hunk-exe + volume name (+ the fixed `startup-sequence`
 template) → bootable `.adf`; no dependency on how the exe was produced — the
 same raw-binary-in shape as the tape master.
+
+## Built (2026-07-10)
+
+Path B (from-scratch) was chosen: the Rust ADF-write ecosystem stops short —
+adflib's create is unimplemented, fstool is a heavy multi-format dependency,
+gadf is Go. `format::adf` (dependency-free, `core`/`std` only) emits the boot
+block (constant KS1.2+ blob), root/bitmap/dir/file headers, OFS data-block
+chaining, the AmigaDOS name hash and block checksums; `build198x adf` is the
+CLI. Layout was taken as ground truth from a known-good disk, cross-checked
+against ADFlib and gadf. **Deterministic** — dates zeroed, byte-stable across
+runs (an improvement over xdftool). Bounded to the curriculum shape (OFS DD,
+1.x boot, `s/startup-sequence` + one exe ≤72 data blocks / ~35 KB); oversized
+is a typed error. Verified: exodus (1 block) and flock unit-18 (26 KB / 55
+blocks) master and boot to correct renders in emu198x-amiga; round-trip +
+checksum + determinism tests pass. Wired into `capture.py`'s `ensure_amiga_adf`
+— the Amiga-assembly build is now fully family-tooled (Asm198x + Build198x),
+Docker retired. Open scope questions (§ above) resolved by the build; the
+`startup-sequence` is a fixed `<name>\n` template, ingest is raw hunk-exe +
+name + volume.
