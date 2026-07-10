@@ -123,8 +123,10 @@ Existing tests asserting `master`'s stdout are updated for the new text default
 
 ## Deferred (YAGNI)
 
-- `list <path>` — arbitrary path, recursive tree.
+- `list [<path>] [--recursive]` — directory listing; shallow by default (the
+  same root view `info` gives), `--recursive` walks the whole tree. The verb
+  surface and `--format` plumbing built here leave a clean home for it.
 - file extraction (`read <disk> <path> [-o file]`).
 - `--format yaml`, `-o wide`-style variants.
 
-Built only when actually reached for.
+Built only when reached for.
