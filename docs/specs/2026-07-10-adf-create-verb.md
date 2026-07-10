@@ -1,6 +1,6 @@
 # ADF `create` verb: the general volume builder
 
-**Status:** design approved, implementing.
+**Status:** implemented (both twins, 2026-07-10).
 **Scope:** both ADF twins — standalone `build198x-adf` and the `build198x adf`
 subcommand — in lockstep, as with `master`/`verify`/`info`.
 **Follows:** [`2026-07-10-adf-read-verbs.md`](2026-07-10-adf-read-verbs.md).
