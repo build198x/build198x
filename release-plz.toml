@@ -53,7 +53,13 @@ git_tag_enable = false
 # build198x-adf: the standalone ADF binary (a lean frontend over the library).
 # It has a binary, so cargo-dist builds it — but it rides the single
 # build198x-vX.Y.Z release tag rather than tagging on its own, so both binaries
-# land in one GitHub Release. Bumps in lockstep, never tags.
+# land in one GitHub Release. Bumps in lockstep, never tags. It is also
+# published to crates.io (for `cargo install build198x-adf`) by the OIDC step in
+# release-plz.yml — the only crate here that publishes; build198x and mediaspec
+# stay publish = false. Lockstep is intentional: build198x-adf's crates.io
+# version tracks the build198x tool suite it belongs to. (Independent versioning
+# was considered and rejected — it would re-create the cargo-dist/git_only
+# workarounds the ADF library was moved to format198x to escape.)
 [[package]]
 name = "build198x-adf"
 git_tag_enable = false
