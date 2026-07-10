@@ -23,6 +23,7 @@
 //! Malformed input never panics: every decode failure is a typed
 //! [`DecodeError`], every rejected encode input a typed [`EncodeError`].
 
+pub mod adf;
 pub mod art_studio;
 pub mod ilbm;
 pub mod koala;

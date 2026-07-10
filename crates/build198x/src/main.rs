@@ -65,7 +65,7 @@ use build198x::convert::colour::Metric;
 use build198x::convert::dither::DitherMode;
 use build198x::convert::normalise;
 use build198x::convert::pipeline::{Conversion, Options, convert};
-use build198x::format::{art_studio, ilbm, koala, scr};
+use build198x::format::{adf, art_studio, ilbm, koala, scr};
 use mediaspec::{ConstraintRule, PaletteModel, Rgb};
 
 /// Monotonic counter making temp-file names unique within the process.
@@ -81,6 +81,7 @@ fn main() -> ExitCode {
         Some((cmd, rest)) => match cmd.as_str() {
             "image" => image_command(rest),
             "beeper" => beeper_command(rest),
+            "adf" => adf_command(rest),
             "--version" | "-V" => {
                 println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
                 ExitCode::SUCCESS
@@ -1274,6 +1275,7 @@ fn top_usage() -> String {
          usage:\n\
          \x20 {name} image <input.png> [more inputs...] --machine <id> --format <f> [options]\n\
          \x20 {name} beeper <input.bpr> [--out-dir <dir>] [--wav] [--asm] [--force]\n\
+         \x20 {name} adf <exe> -o <out.adf> [--volume <label>] [--name <file>]\n\
          \x20 {name} --version\n\
          \x20 {name} --help\n\n\
          run `{name} image --help` or `{name} beeper --help` for each converter's flags.",
@@ -1411,4 +1413,128 @@ mod tests {
             4
         );
     }
+}
+
+/// `build198x adf <exe> -o <out.adf> [--volume <label>] [--name <file>]`
+/// — master a Kickstart-1.x hunk executable into a bootable OFS DD floppy.
+fn adf_command(args: &[String]) -> ExitCode {
+    let mut exe_path: Option<&String> = None;
+    let mut out_path: Option<&String> = None;
+    let mut volume: Option<String> = None;
+    let mut name: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--help" | "-h" => {
+                println!("{}", adf_usage());
+                return ExitCode::SUCCESS;
+            }
+            "-o" | "--output" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => out_path = Some(v),
+                    None => return adf_arg_error("-o needs a path"),
+                }
+            }
+            "--volume" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => volume = Some(v.clone()),
+                    None => return adf_arg_error("--volume needs a label"),
+                }
+            }
+            "--name" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => name = Some(v.clone()),
+                    None => return adf_arg_error("--name needs a value"),
+                }
+            }
+            other if other.starts_with('-') => {
+                return adf_arg_error(&format!("unknown flag `{other}`"));
+            }
+            _ => {
+                if exe_path.is_some() {
+                    return adf_arg_error("more than one executable given");
+                }
+                exe_path = Some(&args[i]);
+            }
+        }
+        i += 1;
+    }
+
+    let Some(exe_path) = exe_path else {
+        return adf_arg_error("no executable given");
+    };
+    let Some(out_path) = out_path else {
+        return adf_arg_error("no output path given (-o <out.adf>)");
+    };
+
+    let exe = match std::fs::read(exe_path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("build198x adf: cannot read {exe_path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    // Defaults: on-disk file name is the exe's basename; volume is that name
+    // with its first letter capitalised (matching the retired xdftool step).
+    let name = name.unwrap_or_else(|| {
+        Path::new(exe_path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "program".to_owned())
+    });
+    let volume = volume.unwrap_or_else(|| {
+        let mut c = name.chars();
+        match c.next() {
+            Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+            None => name.clone(),
+        }
+    });
+
+    let img = match adf::master(&exe, &name, &volume) {
+        Ok(img) => img,
+        Err(e) => {
+            eprintln!("build198x adf: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    if let Err(e) = write_atomic(Path::new(out_path), &img) {
+        eprintln!("build198x adf: {e}");
+        return ExitCode::from(1);
+    }
+
+    println!(
+        "{{\"tool\":\"adf\",\"output\":\"{}\",\"volume\":\"{}\",\"file\":\"{}\",\"bytes\":{},\"exe_bytes\":{}}}",
+        json_escape(out_path),
+        json_escape(&volume),
+        json_escape(&name),
+        img.len(),
+        exe.len()
+    );
+    ExitCode::SUCCESS
+}
+
+fn adf_arg_error(msg: &str) -> ExitCode {
+    eprintln!("build198x adf: {msg}\n\n{}", adf_usage());
+    ExitCode::from(2)
+}
+
+fn adf_usage() -> String {
+    format!(
+        "{name} adf — master a hunk executable into a bootable OFS floppy\n\n\
+         usage:\n\
+         \x20 {name} adf <exe> -o <out.adf> [--volume <label>] [--name <file>]\n\n\
+         Writes an 880K OFS DD `.adf` that boots on a bare A500/KS1.3 straight\n\
+         into the program. Deterministic (zeroed dates) — byte-stable output.\n\n\
+         options:\n\
+         \x20 -o, --output <path>   the .adf to write (required)\n\
+         \x20 --volume <label>      disk label (default: capitalised file name)\n\
+         \x20 --name <file>         on-disk file + startup-sequence command\n\
+         \x20                       (default: the executable's basename)",
+        name = env!("CARGO_PKG_NAME")
+    )
 }
