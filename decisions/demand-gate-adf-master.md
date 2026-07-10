@@ -1,10 +1,9 @@
 # Decision: the ADF master — Amiga assembly's bootable-disk packaging books the media-mastering lane
 
-**Status:** Proposed (Steve, 2026-07-09: "we're probably going to do ADF
-mastering via Build198x"). Gate opening, not the build — and the placement
-follows directly from the resolved tape/framing seam
-([`tape-framing-vs-mastering.md`](../../../decisions/tape-framing-vs-mastering.md)),
-so this record is the reasoning, awaiting Steve's bless before any code.
+**Status:** Active (blessed by Steve 2026-07-10). Gate opened; the tool is not
+yet started — this record is the placement and reasoning, and the build is now
+unblocked. The placement follows the resolved tape/framing seam
+([`tape-framing-vs-mastering.md`](../../../decisions/tape-framing-vs-mastering.md)).
 
 **Date:** 2026-07-09.
 
