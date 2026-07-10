@@ -1336,86 +1336,6 @@ fn image_usage() -> &'static str {
      \x20 6  partial batch failure (some inputs succeeded, some failed)"
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn json_escape_passes_plain_text_through() {
-        assert_eq!(json_escape("plain text 123"), "plain text 123");
-    }
-
-    #[test]
-    fn json_escape_handles_quotes_and_backslashes() {
-        assert_eq!(json_escape(r#"a"b\c"#), r#"a\"b\\c"#);
-    }
-
-    #[test]
-    fn json_escape_handles_control_characters() {
-        assert_eq!(json_escape("a\nb\tc\rd\u{1}e"), "a\\nb\\tc\\rd\\u0001e");
-    }
-
-    #[test]
-    fn json_escape_preserves_non_ascii() {
-        assert_eq!(json_escape("café 198×"), "café 198×");
-    }
-
-    #[test]
-    fn matte_parses_hex_with_and_without_hash() {
-        assert_eq!(parse_matte("ff8001"), Ok([0xff, 0x80, 0x01]));
-        assert_eq!(parse_matte("#102030"), Ok([0x10, 0x20, 0x30]));
-        assert!(parse_matte("ff80").is_err());
-        assert!(parse_matte("zzzzzz").is_err());
-        assert!(parse_matte("ff80011").is_err());
-    }
-
-    #[test]
-    fn default_output_uses_stem_and_format_extension() {
-        assert_eq!(
-            default_output("art/in.png", Format::Koala),
-            PathBuf::from("in.koa")
-        );
-        assert_eq!(default_output("x.png", Format::Scr), PathBuf::from("x.scr"));
-        assert_eq!(
-            default_output("x.png", Format::ArtStudio),
-            PathBuf::from("x.art")
-        );
-        assert_eq!(
-            default_output("x.png", Format::Ilbm),
-            PathBuf::from("x.iff")
-        );
-    }
-
-    #[test]
-    fn exit_codes_follow_the_documented_map() {
-        let entry = |ok: bool, kind: Option<&'static str>| FileEntry {
-            input: "i".to_owned(),
-            ok,
-            outputs: Vec::new(),
-            error: kind.map(|k| (k, "m".to_owned())),
-            warnings: Vec::new(),
-            quality: None,
-        };
-        assert_eq!(exit_code(&[entry(true, None)]), 0);
-        assert_eq!(exit_code(&[entry(false, Some("decode"))]), 3);
-        assert_eq!(exit_code(&[entry(false, Some("convert"))]), 4);
-        assert_eq!(exit_code(&[entry(false, Some("io"))]), 5);
-        assert_eq!(
-            exit_code(&[entry(true, None), entry(false, Some("decode"))]),
-            6
-        );
-        // All-failed mixed kinds: IO wins over convert; decode-only is 3.
-        assert_eq!(
-            exit_code(&[entry(false, Some("decode")), entry(false, Some("io"))]),
-            5
-        );
-        assert_eq!(
-            exit_code(&[entry(false, Some("decode")), entry(false, Some("convert"))]),
-            4
-        );
-    }
-}
-
 /// `build198x adf <exe> -o <out.adf> [--volume <label>] [--name <file>]`
 /// — master a Kickstart-1.x hunk executable into a bootable OFS DD floppy.
 fn adf_command(args: &[String]) -> ExitCode {
@@ -1544,4 +1464,84 @@ fn adf_usage() -> String {
          \x20 --ofs | --ffs         filesystem (default: --ofs; --ffs needs KS2.0+)",
         name = env!("CARGO_PKG_NAME")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_escape_passes_plain_text_through() {
+        assert_eq!(json_escape("plain text 123"), "plain text 123");
+    }
+
+    #[test]
+    fn json_escape_handles_quotes_and_backslashes() {
+        assert_eq!(json_escape(r#"a"b\c"#), r#"a\"b\\c"#);
+    }
+
+    #[test]
+    fn json_escape_handles_control_characters() {
+        assert_eq!(json_escape("a\nb\tc\rd\u{1}e"), "a\\nb\\tc\\rd\\u0001e");
+    }
+
+    #[test]
+    fn json_escape_preserves_non_ascii() {
+        assert_eq!(json_escape("café 198×"), "café 198×");
+    }
+
+    #[test]
+    fn matte_parses_hex_with_and_without_hash() {
+        assert_eq!(parse_matte("ff8001"), Ok([0xff, 0x80, 0x01]));
+        assert_eq!(parse_matte("#102030"), Ok([0x10, 0x20, 0x30]));
+        assert!(parse_matte("ff80").is_err());
+        assert!(parse_matte("zzzzzz").is_err());
+        assert!(parse_matte("ff80011").is_err());
+    }
+
+    #[test]
+    fn default_output_uses_stem_and_format_extension() {
+        assert_eq!(
+            default_output("art/in.png", Format::Koala),
+            PathBuf::from("in.koa")
+        );
+        assert_eq!(default_output("x.png", Format::Scr), PathBuf::from("x.scr"));
+        assert_eq!(
+            default_output("x.png", Format::ArtStudio),
+            PathBuf::from("x.art")
+        );
+        assert_eq!(
+            default_output("x.png", Format::Ilbm),
+            PathBuf::from("x.iff")
+        );
+    }
+
+    #[test]
+    fn exit_codes_follow_the_documented_map() {
+        let entry = |ok: bool, kind: Option<&'static str>| FileEntry {
+            input: "i".to_owned(),
+            ok,
+            outputs: Vec::new(),
+            error: kind.map(|k| (k, "m".to_owned())),
+            warnings: Vec::new(),
+            quality: None,
+        };
+        assert_eq!(exit_code(&[entry(true, None)]), 0);
+        assert_eq!(exit_code(&[entry(false, Some("decode"))]), 3);
+        assert_eq!(exit_code(&[entry(false, Some("convert"))]), 4);
+        assert_eq!(exit_code(&[entry(false, Some("io"))]), 5);
+        assert_eq!(
+            exit_code(&[entry(true, None), entry(false, Some("decode"))]),
+            6
+        );
+        // All-failed mixed kinds: IO wins over convert; decode-only is 3.
+        assert_eq!(
+            exit_code(&[entry(false, Some("decode")), entry(false, Some("io"))]),
+            5
+        );
+        assert_eq!(
+            exit_code(&[entry(false, Some("decode")), entry(false, Some("convert"))]),
+            4
+        );
+    }
 }
