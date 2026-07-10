@@ -1,0 +1,45 @@
+# Dependabot version-update config.
+#
+# Two ecosystems tracked: cargo (workspace Cargo.toml / Cargo.lock) and
+# github-actions (workflow files in .github/workflows/). Minor and patch
+# updates are grouped per ecosystem to keep PR volume low; major updates
+# open per-dep PRs because they're more likely to need real review.
+#
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      cargo-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        update-types:
+          - "minor"
+          - "patch"
+    # cargo-dist owns .github/workflows/release.yml and validates it byte-for-byte
+    # with `dist generate --check`. A Dependabot *major* bump of these actions
+    # there fails that check — they can't be applied without upgrading cargo-dist
+    # itself (release.yml pins e.g. actions/checkout@v6, which 0.32.0 emits). So
+    # ignore majors for the dist-managed actions; bump them via a cargo-dist
+    # upgrade + `dist generate`. Minor/patch and all other actions still flow.
+    ignore:
+      - dependency-name: "actions/checkout"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/upload-artifact"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "actions/download-artifact"
+        update-types: ["version-update:semver-major"]
