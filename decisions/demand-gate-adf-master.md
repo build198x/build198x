@@ -72,3 +72,51 @@ disk formats, copy protection, custom bootblocks/trackloaders.
   does it stay a fixed template, or take parameters as the roster grows?
 - Ingest contract: raw hunk-exe + org/boot params in (no dependency on how the
   exe was produced), matching the tape master's raw-binary ingest.
+
+## Mastering scope (scoped 2026-07-10)
+
+What the mastering step does today (xdftool, per unit): create an 880K DD image
+(1760×512 = 901120 bytes), format **OFS** with a volume name, install the
+standard **1.x boot block**, make an `s/` dir, write `s/startup-sequence` (one
+line: the exe name), write the exe with the **execute** protection bit. The
+disk boots on a bare A500/KS1.3 straight into the program.
+
+**The OFS structures a writer must emit** (dissected from a built disk):
+- **Boot block** (sectors 0–1, 1024 B): `DOS\0` + the fixed 1.x boot code +
+  boot checksum. The boot code is a constant blob — embed it, don't author it.
+- **Root block** (sector 880): volume name, 72-slot hash table (top-level
+  entries), bitmap pointer(s), dates, block checksum.
+- **Bitmap block**: free/used sector map (one block suffices for DD).
+- **Dir header** (`s/`): like a file header, sec_type 2, its own 72-slot table.
+- **File headers** (`startup-sequence`, exe): name hashed into the parent's
+  table, size, protection bits (exe gets `e`), data-block list, checksum.
+- **OFS data blocks**: 24-byte header (type/header-key/seq/data-size/next/
+  checksum) + up to 488 B data, chained per file.
+Plus the AmigaDOS filename hash and the OFS block checksum — both small, fully
+specified algorithms.
+
+**Bounded scope** (the ca65-linker precedent): exactly one disk shape — bootable
+OFS DD, 1.x boot block, `s/startup-sequence` + one exe. Out: FFS, HD, multi-file
+or multi-disk sets, custom bootblocks/trackloaders (own gates when real).
+
+**Rust landscape (evaluate before from-scratch).** `gadf` does precisely this
+job (executable → bootable OFS ADF, AmigaDOS 1.2+); `adflib` (vschwaberow) is a
+Rust read/**write** ADF library; `affs-read` is read-only; `fstool` builds
+Amiga OFS/FFS images. Path A: wrap/port one of these. Path B: a bounded
+from-scratch OFS writer (~a few hundred lines, no deps, format fully
+documented). Decide by maturity + determinism (below).
+
+**Determinism is a requirement and an improvement.** xdftool stamps creation
+dates, so its `.adf` bytes aren't reproducible — a from-scratch writer (or a
+patched/ configured crate) can zero/fix the dates and emit **byte-stable**
+disks, making the committed `.adf` deliverables reproducible. Whichever path is
+chosen must produce deterministic output.
+
+**Validation:** not a byte-compare against xdftool (it stamps dates). The bar is
+functional — the mastered `.adf` boots in emu198x-amiga to the same verified
+screenshot (the migration trigger), confirmed 2026-07-10 for the *assemble*
+half. A structural read-back (adflib/xdftool) is a useful secondary check.
+
+**Ingest contract:** raw hunk-exe + volume name (+ the fixed `startup-sequence`
+template) → bootable `.adf`; no dependency on how the exe was produced — the
+same raw-binary-in shape as the tape master.
