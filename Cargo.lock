@@ -30,6 +30,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "build198x-adf"
+version = "0.2.0"
+dependencies = [
+ "format-commodore-amiga-adf",
+]
+
+[[package]]
 name = "bytemuck"
 version = "1.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

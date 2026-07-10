@@ -1,0 +1,18 @@
+# build198x-adf — the standalone Amiga ADF tool. A lean binary over the
+# format-commodore-amiga-adf library: ADF-only users install this instead of
+# the whole build198x pipeline (no image/mediaspec deps). The `build198x adf`
+# subcommand is the same operation inside the pipeline tool; this is its
+# standalone twin.
+[package]
+name = "build198x-adf"
+description = "Master a Kickstart-1.x hunk executable into a bootable Amiga ADF floppy — the standalone ADF tool."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+format-commodore-amiga-adf = { path = "../format-commodore-amiga-adf", version = "0.2.0" }
+
+[lints]
+workspace = true

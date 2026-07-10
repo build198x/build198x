@@ -52,9 +52,16 @@ git_tag_enable = false
 
 # format-commodore-amiga-adf: the Amiga ADF disk-image library (dependency-free;
 # a build198x dependency, and a crates.io candidate once the read side lands).
-# Bumps in lockstep but never tags — the standalone build198x-adf binary tags
-# separately when it lands. publish stays workspace-default (false) until the
-# read side is in; see decisions/, ADF publish task.
+# Bumps in lockstep but never tags. publish stays workspace-default (false)
+# until the read side is in; see decisions/, ADF publish task.
 [[package]]
 name = "format-commodore-amiga-adf"
+git_tag_enable = false
+
+# build198x-adf: the standalone ADF binary (a lean frontend over the library).
+# It has a binary, so cargo-dist builds it — but it rides the single
+# build198x-vX.Y.Z release tag rather than tagging on its own, so both binaries
+# land in one GitHub Release. Bumps in lockstep, never tags.
+[[package]]
+name = "build198x-adf"
 git_tag_enable = false
