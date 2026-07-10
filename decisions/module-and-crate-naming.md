@@ -70,13 +70,17 @@ would be the junk drawer the family's membership tests guard against) keeps the
 grain: `format198x` alongside `isa198x`, each scoped. When it fills it will be a
 workspace repo (`format198x/format198x`), mirroring `build198x/build198x`.
 
-**Migration is deferred — reserve now, move when real.** Per the split-when-real
-rule, `format-commodore-amiga-adf` **stays in the `build198x` workspace for
-now** and publishes to crates.io from there; the org sits empty like `isa198x`.
-The move to `format198x/format198x` fires when a *second* format crate (a D64,
-TAP, or a split-out codec) makes the standalone workspace worth standing up, or
-when Emu198x adopting the read side makes the neutral home concrete — whichever
-comes first. Moving one crate today would be the pre-emptive split this rule
-forbids. The crates.io name is independent of the org, so the first publish's
-`repository` pointing at `build198x` is a cosmetic detail, corrected in a later
-version at migration.
+**Migrated 2026-07-10 (reversing "reserve now, move later").** Initially the plan
+was to keep the crate in `build198x` and migrate on a second format crate. That
+was overtaken: fitting an independently-versioned, published library into
+`build198x`'s binary workspace took four workarounds (independent version bolted
+onto lockstep, `git_tag_enable=false` to dodge cargo-dist, a publish guard for
+the shared release tag, an unproven git_only bump). Steve called it — that
+friction *was* the reason to move — so `format-commodore-amiga-adf` now lives in
+`format198x/format198x` (a clean library workspace: per-package versioning, no
+cargo-dist, OIDC publish, none of the workarounds). `build198x` and
+`build198x-adf` consume it **from crates.io** like any external user. The
+migration trigger was "the crate has become its own product" (published +
+independently versioned + about to be refactored), not the second-crate rule.
+The `Volume`/codec split rule above still governs *future* format crates; they
+join `format198x/format198x` directly.

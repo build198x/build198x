@@ -7,10 +7,8 @@
 # .github/workflows/release.yml (cargo-dist) to build the `build198x` CLI and
 # attach the archives to a GitHub Release.
 #
-# Versioning is lockstep for build198x, mediaspec, and build198x-adf: they
-# inherit [workspace.package].version, so one bump applies to all. The published
-# library format-commodore-amiga-adf is the exception — it carries its own
-# version (see its package block below) and bumps only when it changes.
+# Versioning is lockstep: every workspace crate inherits its version from
+# [workspace.package] in Cargo.toml, so a single bump applies everywhere.
 #
 # publish = false: we do NOT publish to crates.io (the binary ships via the
 # GitHub Release instead, and generic crate names shouldn't be claimed
@@ -50,20 +48,6 @@ git_only = true
 # consumes it by pinned git rev). Bumps in lockstep but never tags.
 [[package]]
 name = "mediaspec"
-git_tag_enable = false
-
-# format-commodore-amiga-adf: the Amiga ADF disk-image library — the family's
-# first crates.io crate, published at 0.2.0. Independently versioned (its own
-# version in crates/format-commodore-amiga-adf/Cargo.toml, not the workspace
-# lockstep), so its crates.io history reflects only its own changes. Never tags
-# (a library tag would trip cargo-dist's release.yml); it publishes from
-# .github/workflows/publish.yml over OIDC on the build198x release tag, guarded
-# to skip an already-published version. release-plz stays publish = false here
-# (it versions/changelogs; the workflow publishes). NOTE: the per-package bump
-# under git_only is unproven — validate it at the first ADF-only release, and
-# fall back to bumping this crate's version by hand if release-plz mis-bumps it.
-[[package]]
-name = "format-commodore-amiga-adf"
 git_tag_enable = false
 
 # build198x-adf: the standalone ADF binary (a lean frontend over the library).

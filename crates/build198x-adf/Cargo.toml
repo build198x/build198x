@@ -12,7 +12,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-format-commodore-amiga-adf = { path = "../format-commodore-amiga-adf", version = "0.2.0" }
+# The ADF library now lives in the format198x org; consumed from crates.io.
+format-commodore-amiga-adf = "0.2.0"
 
 [lints]
 workspace = true
