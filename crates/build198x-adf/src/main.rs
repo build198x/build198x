@@ -1,10 +1,10 @@
-//! `build198x-adf` — master a Kickstart-1.x hunk executable into a bootable
-//! Amiga ADF floppy. The standalone twin of `build198x adf`: the same
+//! `build198x-adf` — master an Amiga hunk executable into a bootable ADF
+//! floppy, OFS or FFS. The standalone twin of `build198x adf`: the same
 //! operation over the same [`format_commodore_amiga_adf`] library, packaged as
 //! a lean ADF-only tool with no pipeline dependencies.
 //!
 //! ```text
-//! build198x-adf <exe> -o <out.adf> [--volume <label>] [--name <file>]
+//! build198x-adf <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs]
 //! ```
 //!
 //! The on-disk file name defaults to the executable's basename; the volume
