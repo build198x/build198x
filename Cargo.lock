@@ -90,9 +90,9 @@ dependencies = [
 
 [[package]]
 name = "format-commodore-amiga-adf"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d199fb993f75e704d455cff5f1db2d8a61aca91c93bb89f9ab268e077a24d703"
+checksum = "f200118ea4bacc82c516f881a8f3638711041d2b6eb9e26e53c0587dd1181f9e"
 
 [[package]]
 name = "gif"
