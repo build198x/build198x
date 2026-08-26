@@ -1,6 +1,6 @@
 # build198x-adf — the standalone Amiga ADF tool. A lean binary over the
 # format198x-commodore-amiga-adf library: ADF-only users install this instead of
-# the whole build198x pipeline (no image/mediaspec deps). The `build198x adf`
+# the whole build198x pipeline (no image/mediaspec198x deps). The `build198x adf`
 # subcommand is the same operation inside the pipeline tool; this is its
 # standalone twin.
 [package]

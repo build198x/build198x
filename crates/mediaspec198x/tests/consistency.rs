@@ -4,7 +4,7 @@
 //! `source_facts.rs`); they enforce the structural invariants the converter
 //! relies on, across all machines at once.
 
-use mediaspec::{ConstraintRule, PaletteModel, machine, machines};
+use mediaspec198x::{ConstraintRule, PaletteModel, machine, machines};
 
 /// Machine ids are unique and round-trip through the by-id accessor.
 #[test]

@@ -12,7 +12,7 @@ concurrency:
 permissions:
   pull-requests: write
   contents: write
-  id-token: write # OIDC token for crates.io Trusted Publishing (build198x-adf)
+  id-token: write # OIDC for crates.io Trusted Publishing (build198x-adf, mediaspec198x)
 
 jobs:
   release-plz:
@@ -62,9 +62,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
 
       # Publish build198x-adf to crates.io over Trusted Publishing (OIDC — no
-      # stored registry token). Only build198x-adf goes to crates.io; build198x
-      # and mediaspec stay publish = false (the binary ships via cargo-dist,
-      # mediaspec is git-rev-consumed). Gated on releases_created, so OIDC runs
+      # stored registry token). build198x stays publish = false (the binary ships
+      # via cargo-dist); mediaspec198x also goes to crates.io, but it publishes
+      # from its own [[package]] publish = true in release-plz.toml, so the
+      # `release` step above owns it (Trusted Publishing over the workflow-level
+      # id-token permission). Gated on releases_created, so OIDC runs
       # only on an actual release; the guard skips a version already published
       # (re-runs). build198x-adf is lockstep with build198x by design — its
       # crates.io version tracks the tool suite.

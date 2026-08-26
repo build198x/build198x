@@ -6,12 +6,15 @@
 
 ## The decision
 
-1. **Two crates in wave 1:** `mediaspec` (zero-dep spec data — separate because
-   Emu198x consumes it by pinned git rev from day 1) and `build198x` (everything
-   else: codecs, pipeline, CLI — a lib + bin crate). This applies the family's
-   split-when-a-second-consumer-makes-it-real rule (the `isa` crate's own
+1. **Two crates in wave 1:** `mediaspec198x` (zero-dep spec data — separate
+   because Emu198x consumes it by pinned git rev from day 1) and `build198x`
+   (everything else: codecs, pipeline, CLI — a lib + bin crate). This applies the
+   family's split-when-a-second-consumer-makes-it-real rule (the `isa` crate's own
    deferral) and was confirmed by Steve on 2026-06-11, revising the wave-1 plan's
-   seven-crate Output Structure.
+   seven-crate Output Structure. The crate was named `mediaspec` until 2026-08-26,
+   when it was renamed and published; see
+   [`../../../decisions/crate-naming.md`](../../../decisions/crate-naming.md) and
+   [`../../../decisions/shared-media-spec.md`](../../../decisions/shared-media-spec.md).
 
 2. **Codec modules mirror the crate names they would become.** Inside
    `build198x`: `format::scr`, `format::koala`, `format::art_studio`,
@@ -26,7 +29,7 @@
    [`../../../decisions/crate-naming.md`](../../../decisions/crate-naming.md).
 
 3. **Module dependency discipline holds by convention until crates enforce it:**
-   `format::*` modules depend on nothing but `core`/`std` (not on `mediaspec`,
+   `format::*` modules depend on nothing but `core`/`std` (not on `mediaspec198x`,
    not on the pipeline) — they are pure byte-layout code, exactly as they'd be as
    crates.
 
@@ -68,7 +71,7 @@ than the shared `format::EncodeError`. The naming discipline still binds
 **The Emu198x tie this creates.** Writing an ADF is Build198x's domain; reading
 one is more Emu198x's (it mounts floppies). Once the crate holds the read side,
 Emu198x is its natural second consumer — consuming it by pinned git rev exactly
-as it already consumes `mediaspec` and Asm198x's `isa-disasm`.
+as it already consumes `mediaspec198x` and Asm198x's `isa-disasm`.
 
 **The neutral home: `format198x` (reserved 2026-07-10).** The `format198x`
 GitHub org was grabbed as the eventual home for the `format-{manufacturer}-

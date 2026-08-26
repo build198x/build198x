@@ -3,7 +3,7 @@
 //! choices, a quality report, and bridges to the [`crate::format`] codec
 //! input structs.
 
-use mediaspec::{ConstraintRule, MachineGraphics, PaletteModel, Rgb, ScreenMode};
+use mediaspec198x::{ConstraintRule, MachineGraphics, PaletteModel, Rgb, ScreenMode};
 
 use super::colour::{Metric, srgb8_to_linear};
 use super::constrain::{CellSearcher, HiresChoice, MultiChoice, PaletteData, SpectrumChoice};
@@ -58,7 +58,7 @@ impl Options {
     /// [`convert`] rejects it anyway.
     #[must_use]
     pub fn new(machine: &str, mode: &str) -> Self {
-        let dither = mediaspec::machine(machine)
+        let dither = mediaspec198x::machine(machine)
             .and_then(|m| m.mode(mode))
             .map_or(DitherMode::Bayer8, |md| default_dither(md.constraint));
         Self {
@@ -168,7 +168,7 @@ pub fn convert(img: &image::DynamicImage, opts: &Options) -> Result<Conversion, 
         });
     }
     let machine =
-        mediaspec::machine(&opts.machine).ok_or_else(|| ConvertError::UnknownMachine {
+        mediaspec198x::machine(&opts.machine).ok_or_else(|| ConvertError::UnknownMachine {
             machine: opts.machine.clone(),
         })?;
     let mode = machine
@@ -844,12 +844,12 @@ impl Conversion {
         })?;
         // The HIRES bit follows the mode's spec data: a 1:2 pixel aspect is
         // the half-width-pixel (hires) marker, not the mode's name.
-        let mode = mediaspec::machine(&self.machine_id)
+        let mode = mediaspec198x::machine(&self.machine_id)
             .and_then(|m| m.mode(&self.mode_name))
             .ok_or(ConvertError::Internal {
                 what: "conversion names a machine/mode the spec does not hold",
             })?;
-        let hires = mode.pixel_aspect == mediaspec::Ratio::new(1, 2);
+        let hires = mode.pixel_aspect == mediaspec198x::Ratio::new(1, 2);
         let camg = if hires { ilbm::CAMG_HIRES } else { 0 };
         // BMHD pixel aspect, derived from the same spec fact as CAMG: the
         // ILBM spec's PAL aspects are 10:11 for lores (1:1 mode pixels)

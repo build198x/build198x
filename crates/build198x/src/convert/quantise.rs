@@ -24,7 +24,7 @@
 //! `display = (level·255 + levels/2) / levels` — for the 4-bit Amiga gamut
 //! that is exactly `level = (v·15 + 127)/255`, `display = level·17`.
 
-use mediaspec::Rgb;
+use mediaspec198x::Rgb;
 
 use super::LinearImage;
 use super::colour::SRGB_TO_LINEAR;

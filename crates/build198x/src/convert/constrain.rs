@@ -18,7 +18,7 @@
 //! the **lowest palette index wins on equal distance**. All arithmetic is
 //! basic IEEE ops.
 
-use mediaspec::Rgb;
+use mediaspec198x::Rgb;
 
 use super::colour::{Metric, srgb8_to_linear};
 

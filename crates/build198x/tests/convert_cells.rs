@@ -4,7 +4,7 @@
 
 use build198x::convert::colour::{Metric, srgb8_to_linear};
 use build198x::convert::constrain::{CellSearcher, PaletteData, choose_background};
-use mediaspec::rgb;
+use mediaspec198x::rgb;
 mod common;
 use common::palette_of;
 

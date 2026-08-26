@@ -1,6 +1,6 @@
 //! Linear-light letterboxing onto a target mode's paper grid.
 //!
-//! The fit honours the mode's **pixel aspect ratio** from `mediaspec`: the
+//! The fit honours the mode's **pixel aspect ratio** from `mediaspec198x`: the
 //! source (assumed square-pixel) is scaled to the largest PAR-corrected fit
 //! inside the paper's display rectangle, centred, and padded with the matte
 //! colour. Geometry is computed in **pure integer arithmetic** (u64
@@ -16,7 +16,7 @@
 //! short-circuits to a byte-identical copy. Upscaling uses the same box
 //! filter.
 
-use mediaspec::ScreenMode;
+use mediaspec198x::ScreenMode;
 
 use super::colour::srgb8_to_linear;
 use super::{LinearImage, Rgb8Image};

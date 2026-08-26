@@ -14,7 +14,7 @@
 //! `decisions/module-and-crate-naming.md`: codec modules mirror the crate
 //! names they would become if a second consumer makes a split real, and
 //! they depend on nothing but `core`/`std`; `convert::*` may depend on
-//! `mediaspec` and `image`; `beeper::*` is `std`-only.
+//! `mediaspec198x` and `image`; `beeper::*` is `std`-only.
 
 pub mod beeper;
 pub mod convert;
