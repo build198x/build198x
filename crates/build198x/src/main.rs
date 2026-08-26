@@ -66,7 +66,7 @@ use build198x::convert::dither::DitherMode;
 use build198x::convert::normalise;
 use build198x::convert::pipeline::{Conversion, Options, convert};
 use build198x::format::{art_studio, ilbm, koala, scr};
-use format_commodore_amiga_adf as adf;
+use format198x_commodore_amiga_adf as adf;
 use mediaspec::{ConstraintRule, PaletteModel, Rgb};
 
 /// Monotonic counter making temp-file names unique within the process.

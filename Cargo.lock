@@ -24,11 +24,11 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 name = "build198x"
 version = "0.2.1"
 dependencies = [
- "format-commodore-amiga-adf",
- "format-commodore-amiga-ilbm",
- "format-commodore-c64-art-studio",
- "format-commodore-c64-koala",
- "format-sinclair-zx-spectrum-scr",
+ "format198x-commodore-amiga-adf",
+ "format198x-commodore-amiga-ilbm",
+ "format198x-commodore-c64-art-studio",
+ "format198x-commodore-c64-koala",
+ "format198x-sinclair-zx-spectrum-scr",
  "image",
  "mediaspec",
 ]
@@ -37,7 +37,7 @@ dependencies = [
 name = "build198x-adf"
 version = "0.2.1"
 dependencies = [
- "format-commodore-amiga-adf",
+ "format198x-commodore-amiga-adf",
 ]
 
 [[package]]
@@ -93,34 +93,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "format-commodore-amiga-adf"
-version = "0.2.0"
+name = "format198x-commodore-amiga-adf"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d199fb993f75e704d455cff5f1db2d8a61aca91c93bb89f9ab268e077a24d703"
+checksum = "cffa3201527a34605e0c8ab50dc542c6ec7171180e180e0775089da49a322278"
 
 [[package]]
-name = "format-commodore-amiga-ilbm"
-version = "0.1.0"
+name = "format198x-commodore-amiga-ilbm"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d791f29d78966e5dcb0fcc21bede233737c3cf597a3a1fae61652077dff88479"
+checksum = "45cdd65f89ae0464febcfd7d591791039b10b44cb9cc23e0b140b90ae0d748f9"
 
 [[package]]
-name = "format-commodore-c64-art-studio"
-version = "0.1.0"
+name = "format198x-commodore-c64-art-studio"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68d4cc0f3d810c1d7b2166771c8bfde4dab4781d692dc414aedea1f5df7e66fd"
+checksum = "641c6f3b86ca751d339a99548aea33a6954f58519e7e03d4a632980bfef9cc04"
 
 [[package]]
-name = "format-commodore-c64-koala"
-version = "0.1.0"
+name = "format198x-commodore-c64-koala"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5901f43be573f1cc79426434bdd3a4b9b82e0bf7be3053a2763de57a07122e6f"
+checksum = "965fe70853b9a857e4c6348e78e04e2dee23b99f234a49a252f4eb0a1145a176"
 
 [[package]]
-name = "format-sinclair-zx-spectrum-scr"
-version = "0.1.0"
+name = "format198x-sinclair-zx-spectrum-scr"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cedb882d26ef8116f7e14968ded42bd8cbca1a59f73f3047cc389f33c547652"
+checksum = "610fabfd99082b0eab2a5ba3fb3bd77118defbbc5bb5ba3cba7f5baa30119612"
 
 [[package]]
 name = "gif"

@@ -13,7 +13,7 @@
 //! share a type. Call sites convert with `.to_string()`, which works on any
 //! of them via `Display`.
 
-pub use format_commodore_amiga_ilbm as ilbm;
-pub use format_commodore_c64_art_studio as art_studio;
-pub use format_commodore_c64_koala as koala;
-pub use format_sinclair_zx_spectrum_scr as scr;
+pub use format198x_commodore_amiga_ilbm as ilbm;
+pub use format198x_commodore_c64_art_studio as art_studio;
+pub use format198x_commodore_c64_koala as koala;
+pub use format198x_sinclair_zx_spectrum_scr as scr;

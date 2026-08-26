@@ -20,14 +20,14 @@ mediaspec = { path = "../mediaspec", version = "0.2.1" }
 # The Amiga ADF disk-image library — now its own crate in the format198x org
 # (github.com/format198x/format198x), consumed here from crates.io like any
 # external user. The `adf` subcommand delegates to it.
-format-commodore-amiga-adf = "0.2.0"
+format198x-commodore-amiga-adf = "0.2.2"
 # The four screen-format codecs graduated to Format198x now that they live
 # in their own org (github.com/format198x/format198x). Consumed from
 # crates.io like any external user, same as the ADF crate above.
-format-sinclair-zx-spectrum-scr = "0.1.0"
-format-commodore-c64-koala = "0.1.0"
-format-commodore-c64-art-studio = "0.1.0"
-format-commodore-amiga-ilbm = "0.1.0"
+format198x-sinclair-zx-spectrum-scr = "0.1.1"
+format198x-commodore-c64-koala = "0.1.1"
+format198x-commodore-c64-art-studio = "0.1.1"
+format198x-commodore-amiga-ilbm = "0.1.1"
 # Decode + DynamicImage only. default-features = false keeps the decoder set
 # explicit (PNG is the byte-identical contract; JPEG/GIF are accepted
 # best-effort — decisions/determinism-contract.md) and keeps `rayon` out:

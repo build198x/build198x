@@ -16,11 +16,14 @@
 2. **Codec modules mirror the crate names they would become.** Inside
    `build198x`: `format::scr`, `format::koala`, `format::art_studio`,
    `format::ilbm`. If/when Play198x consumes a codec, it splits out as
-   `format-{manufacturer}-{system}-{format}` (`format-sinclair-zx-spectrum-scr`,
-   `format-commodore-c64-koala`, `format-commodore-c64-art-studio`,
-   `format-commodore-amiga-ilbm`) — adopting Emu198x's naming discipline
+   `format198x-{manufacturer}-{system}-{format}`
+   (`format198x-sinclair-zx-spectrum-scr`, `format198x-commodore-c64-koala`,
+   `format198x-commodore-c64-art-studio`, `format198x-commodore-amiga-ilbm`) —
+   adopting Emu198x's naming discipline
    (`Emu198x/knowledge/decisions/crate-naming.md`): retro extensions collide
-   (DSK, TAP), so formats are always namespaced by system.
+   (DSK, TAP), so formats are always namespaced by system. The `format198x-`
+   prefix was added on 2026-08-26 when the crates were published; see
+   [`../../../decisions/crate-naming.md`](../../../decisions/crate-naming.md).
 
 3. **Module dependency discipline holds by convention until crates enforce it:**
    `format::*` modules depend on nothing but `core`/`std` (not on `mediaspec`,
@@ -33,8 +36,12 @@
   already-constrained indexed data. If a codec wants spec data, the layering is
   wrong.
 - **"Split a codec crate out pre-emptively"** — wait for the real consumer.
-- **"Name the split crate after the file extension alone"** — no;
-  `format-{manufacturer}-{system}-{format}`, always.
+- **"Name the split crate after the file extension alone"** — no; formats are
+  always namespaced by system, and a published crate carries its org as a
+  prefix: `format198x-{manufacturer}-{system}-{format}`. The umbrella record
+  [`../../../decisions/crate-naming.md`](../../../decisions/crate-naming.md)
+  binds the prefix, and it is *added* rather than replacing a category word —
+  an Emu198x format crate becomes `emu198x-format-*`, not `emu198x-*`.
 
 ## Amendment (2026-07-10): an external audience is a real consumer
 
@@ -49,7 +56,8 @@ plausible consumer, not a hypothetical one — the same bar the licensing-split
 record sets for publishing (`Emu198x/.../crate-licensing-split.md`, "publish
 where there's a plausible consumer").
 
-**First application — `format-commodore-amiga-adf`** (2026-07-10). The Amiga ADF
+**First application — `format198x-commodore-amiga-adf`** (2026-07-10, then
+named `format-commodore-amiga-adf`). The Amiga ADF
 writer split out of `format::adf` under this amendment, keeping the convention
 name. It is not a pixel codec but a disk-image/filesystem library (OFS now; FFS,
 a general multi-file API, and the read side to follow), so its public surface is
@@ -76,7 +84,7 @@ was overtaken: fitting an independently-versioned, published library into
 `build198x`'s binary workspace took four workarounds (independent version bolted
 onto lockstep, `git_tag_enable=false` to dodge cargo-dist, a publish guard for
 the shared release tag, an unproven git_only bump). Steve called it — that
-friction *was* the reason to move — so `format-commodore-amiga-adf` now lives in
+friction *was* the reason to move — so `format198x-commodore-amiga-adf` now lives in
 `format198x/format198x` (a clean library workspace: per-package versioning, no
 cargo-dist, OIDC publish, none of the workarounds). `build198x` and
 `build198x-adf` consume it **from crates.io** like any external user. The
