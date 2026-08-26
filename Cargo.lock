@@ -25,6 +25,10 @@ name = "build198x"
 version = "0.2.0"
 dependencies = [
  "format-commodore-amiga-adf",
+ "format-commodore-amiga-ilbm",
+ "format-commodore-c64-art-studio",
+ "format-commodore-c64-koala",
+ "format-sinclair-zx-spectrum-scr",
  "image",
  "mediaspec",
 ]
@@ -93,6 +97,22 @@ name = "format-commodore-amiga-adf"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d199fb993f75e704d455cff5f1db2d8a61aca91c93bb89f9ab268e077a24d703"
+
+[[package]]
+name = "format-commodore-amiga-ilbm"
+version = "0.1.0"
+
+[[package]]
+name = "format-commodore-c64-art-studio"
+version = "0.1.0"
+
+[[package]]
+name = "format-commodore-c64-koala"
+version = "0.1.0"
+
+[[package]]
+name = "format-sinclair-zx-spectrum-scr"
+version = "0.1.0"
 
 [[package]]
 name = "gif"

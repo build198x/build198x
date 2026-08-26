@@ -21,6 +21,13 @@ mediaspec = { path = "../mediaspec", version = "0.2.0" }
 # (github.com/format198x/format198x), consumed here from crates.io like any
 # external user. The `adf` subcommand delegates to it.
 format-commodore-amiga-adf = "0.2.0"
+# The four screen-format codecs graduated to Format198x once Play198x became
+# a second consumer (decisions/module-and-crate-naming.md). Path deps for
+# now, alongside their siblings in the same in-progress extraction.
+format-sinclair-zx-spectrum-scr = { path = "../../../../Format198x/format198x/crates/format-sinclair-zx-spectrum-scr" }
+format-commodore-c64-koala = { path = "../../../../Format198x/format198x/crates/format-commodore-c64-koala" }
+format-commodore-c64-art-studio = { path = "../../../../Format198x/format198x/crates/format-commodore-c64-art-studio" }
+format-commodore-amiga-ilbm = { path = "../../../../Format198x/format198x/crates/format-commodore-amiga-ilbm" }
 # Decode + DynamicImage only. default-features = false keeps the decoder set
 # explicit (PNG is the byte-identical contract; JPEG/GIF are accepted
 # best-effort — decisions/determinism-contract.md) and keeps `rayon` out:
