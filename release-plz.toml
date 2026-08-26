@@ -23,13 +23,17 @@ git_release_enable = false
 git_tag_enable = true
 changelog_update = true
 
-# git_only = true: take the previous version from the git tag, not the
-# crates.io registry. Required whenever publish = false — with no registry
-# baseline, release-plz can't see the last release and never bumps the version
-# (it reports "already up-to-date" and opens no release PR). See the umbrella
-# project-skeleton-standard decision for the full story.
-# (Must precede any [[package]] table below: it is a [workspace] key.)
-git_only = true
+# git_only is NOT set here, deliberately. It takes the previous version from
+# the git tag rather than the crates.io registry, and is required whenever
+# publish = false — with no registry baseline release-plz cannot see the last
+# release and never bumps (it reports "already up-to-date" and opens no release
+# PR). See the umbrella project-skeleton-standard decision.
+#
+# But release-plz rejects git_only alongside publish = true: "Config options
+# 'git_only' and 'publish' are mutually exclusive." As a [workspace] key it
+# applies to every package, so it cannot coexist with the two crates below that
+# publish. It therefore sits on build198x's own [[package]] block, which is the
+# only crate that needs it.
 
 # Library crates are not dist-able (no binary) and never ship independently —
 # they exist only as dependencies of `build198x`. cargo-dist's release.yml
@@ -59,6 +63,16 @@ git_only = true
 # the isa-disasm junk-release failure recorded above. crates.io is this crate's
 # distribution; it needs no tag and no GitHub Release. Its version baseline is
 # the registry, which is what publish = true gives it.
+# build198x: the CLI. Never published — the binary ships via cargo-dist — so it
+# has no registry baseline and release-plz would silently never bump it. That is
+# what git_only fixes, and it must sit here rather than on [workspace]:
+# release-plz rejects git_only alongside publish = true, and the two crates below
+# do publish.
+[[package]]
+name = "build198x"
+publish = false
+git_only = true
+
 [[package]]
 name = "mediaspec198x"
 publish = true
