@@ -69,12 +69,12 @@ git_release_enable = false
 # It has a binary, so cargo-dist builds it — but it rides the single
 # build198x-vX.Y.Z release tag rather than tagging on its own, so both binaries
 # land in one GitHub Release. Bumps in lockstep, never tags. It is also
-# published to crates.io (for `cargo install build198x-adf`) by the OIDC step in
-# release-plz.yml; build198x stays publish = false, and mediaspec198x publishes
-# through release-plz itself. Lockstep is intentional: build198x-adf's crates.io
+# published to crates.io (for `cargo install build198x-adf`) by release-plz
+# itself, the same way mediaspec198x is; build198x stays publish = false. Lockstep is intentional: build198x-adf's crates.io
 # version tracks the build198x tool suite it belongs to. (Independent versioning
 # was considered and rejected — it would re-create the cargo-dist/git_only
 # workarounds the ADF library was moved to format198x to escape.)
 [[package]]
 name = "build198x-adf"
+publish = true
 git_tag_enable = false
