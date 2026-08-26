@@ -178,8 +178,10 @@ mod tests {
     fn tone_toggles_and_rest_is_silent() {
         let bytes = render(&e5_phrase()).expect("renders");
         let pcm: Vec<i16> = bytes[44..]
-            .chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&c| i16::from_le_bytes(c))
             .collect();
         // The tone section contains both polarities…
         let tone_end = (198 * 5292 * 44_100u64 / 3_500_000) as usize;
