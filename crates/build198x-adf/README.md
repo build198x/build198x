@@ -4,7 +4,7 @@ A small command-line tool to **read and write Commodore Amiga `.adf` floppy disk
 images**: master a hunk executable into a bootable disk, build arbitrary volumes,
 verify a disk's integrity, and inspect its contents.
 
-It's a thin front-end over the [`format-commodore-amiga-adf`] library:
+It's a thin front-end over the [`format198x-commodore-amiga-adf`] library:
 deterministic, dependency-light, OFS and FFS.
 
 ## Install
@@ -54,12 +54,12 @@ single machine-readable line. Disks are written atomically.
 
 `build198x-adf` is the standalone twin of the `build198x adf` subcommand in
 [Build198x], the 198x family's build-tools pipeline. The disk-format logic lives
-in [`format-commodore-amiga-adf`]; install this if you just want the ADF tool
+in [`format198x-commodore-amiga-adf`]; install this if you just want the ADF tool
 without the rest of the pipeline.
 
 ## Licence
 
 GPL-2.0-or-later.
 
-[`format-commodore-amiga-adf`]: https://crates.io/crates/format-commodore-amiga-adf
+[`format198x-commodore-amiga-adf`]: https://crates.io/crates/format198x-commodore-amiga-adf
 [Build198x]: https://github.com/build198x/build198x

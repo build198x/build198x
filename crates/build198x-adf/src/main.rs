@@ -1,6 +1,6 @@
 //! `build198x-adf` — master, verify, and inspect bootable Amiga ADF floppies.
 //! The standalone twin of `build198x adf`: the same operations over the same
-//! [`format_commodore_amiga_adf`] library, packaged as a lean ADF-only tool
+//! [`format198x_commodore_amiga_adf`] library, packaged as a lean ADF-only tool
 //! with no pipeline dependencies.
 //!
 //! ```text
@@ -16,7 +16,7 @@
 //! failure, `2` usage error. On failure a diagnostic goes to stderr. A mastered
 //! `.adf` is written atomically (temp file, then rename).
 
-use format_commodore_amiga_adf::{Disk, Entry, EntryKind, FileSystem, Volume};
+use format198x_commodore_amiga_adf::{Disk, Entry, EntryKind, FileSystem, Volume};
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -164,7 +164,7 @@ fn cmd_master(args: &[String]) -> ExitCode {
         }
     });
 
-    let img = match format_commodore_amiga_adf::master_fs(&exe, &name, &volume, fs) {
+    let img = match format198x_commodore_amiga_adf::master_fs(&exe, &name, &volume, fs) {
         Ok(img) => img,
         Err(e) => {
             eprintln!("build198x-adf: {e}");
@@ -590,7 +590,7 @@ fn assemble_volume(
     mkdirs: &[String],
     files: &[(String, Vec<u8>)],
     startup: Option<&str>,
-) -> Result<Vec<u8>, format_commodore_amiga_adf::Error> {
+) -> Result<Vec<u8>, format198x_commodore_amiga_adf::Error> {
     let mut vol = Volume::new(label, fs);
     vol.set_bootable(bootable);
     for d in mkdirs {
