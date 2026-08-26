@@ -19,7 +19,7 @@ default-members = ["crates/build198x"]
 
 [workspace.package]
 edition = "2024"
-version = "0.2.0"
+version = "0.2.1"
 license = "GPL-2.0-or-later"
 repository = "https://github.com/build198x/build198x"
 

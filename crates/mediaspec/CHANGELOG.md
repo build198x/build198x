@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/build198x/build198x/compare/mediaspec-v0.2.0...mediaspec-v0.2.1) - 2026-07-10
+
+### Added
+
+- add the build198x image CLI
+- add the mediaspec graphics capability spec crate
+
+### Fixed
+
+- mark the workspace unpublishable so release-plz stops packaging it
+- resolve residual review findings
+- apply code-review safe fixes
+
+### Other
+
+- release v0.2.0
+- release v0.1.0
+- deduplicate determinism-sensitive kernels and spec-key the CLI gates
+
 ## [0.2.0] - 2026-07-02
 
 ### Other

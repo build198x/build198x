@@ -16,7 +16,7 @@ repository.workspace = true
 # The version requirement rides alongside the path (Asm198x's pattern for
 # its isa crates): release-plz's cargo-package step refuses a bare path dep,
 # and it bumps this requirement in lockstep on each release.
-mediaspec = { path = "../mediaspec", version = "0.2.0" }
+mediaspec = { path = "../mediaspec", version = "0.2.1" }
 # The Amiga ADF disk-image library — now its own crate in the format198x org
 # (github.com/format198x/format198x), consumed here from crates.io like any
 # external user. The `adf` subcommand delegates to it.
