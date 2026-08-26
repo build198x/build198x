@@ -30,7 +30,7 @@ dependencies = [
  "format198x-commodore-c64-koala",
  "format198x-sinclair-zx-spectrum-scr",
  "image",
- "mediaspec",
+ "mediaspec198x",
 ]
 
 [[package]]
@@ -150,8 +150,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "mediaspec"
-version = "0.2.2"
+name = "mediaspec198x"
+version = "0.1.0"
 
 [[package]]
 name = "miniz_oxide"

@@ -8,7 +8,7 @@ use build198x::convert::dither::{DitherMode, diffuse_planar};
 use build198x::convert::pipeline::{Options, convert};
 use build198x::convert::quantise::{generate_palette, round_channel_to_gamut};
 use image::{DynamicImage, RgbImage};
-use mediaspec::Rgb;
+use mediaspec198x::Rgb;
 
 /// Four colours already on the 4-bit (v = level·17) gamut grid.
 const GRID_COLOURS: [[u8; 3]; 4] = [[0, 0, 0], [255, 255, 255], [136, 17, 34], [68, 204, 170]];

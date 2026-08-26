@@ -7,7 +7,7 @@ use build198x::convert::colour::Metric;
 use build198x::convert::dither::DitherMode;
 use build198x::convert::pipeline::{CellChoice, Options, convert, default_dither};
 use image::{DynamicImage, RgbImage};
-use mediaspec::Rgb;
+use mediaspec198x::Rgb;
 
 mod common;
 use common::palette_of;
@@ -321,7 +321,7 @@ fn exhaustive_background_is_deterministic_and_tie_breaks_low() {
 fn dither_default_resolves_per_target() {
     // The shared resolver: planar (free-palette) targets default to
     // serpentine Floyd–Steinberg, cell-constrained targets to 8×8 Bayer.
-    use mediaspec::ConstraintRule;
+    use mediaspec198x::ConstraintRule;
     assert_eq!(
         default_dither(ConstraintRule::Planar { max_planes: 5 }),
         DitherMode::FloydSteinberg

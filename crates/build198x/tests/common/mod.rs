@@ -6,11 +6,11 @@
 
 use std::path::PathBuf;
 
-use mediaspec::Rgb;
+use mediaspec198x::Rgb;
 
 /// The pinned default palette interpretation's colours for a machine.
 pub fn palette_of(machine: &str) -> &'static [Rgb] {
-    mediaspec::machine(machine)
+    mediaspec198x::machine(machine)
         .expect("machine exists")
         .default_palette()
         .expect("default palette pinned")

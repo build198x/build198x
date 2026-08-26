@@ -67,7 +67,7 @@ use build198x::convert::normalise;
 use build198x::convert::pipeline::{Conversion, Options, convert};
 use build198x::format::{art_studio, ilbm, koala, scr};
 use format198x_commodore_amiga_adf as adf;
-use mediaspec::{ConstraintRule, PaletteModel, Rgb};
+use mediaspec198x::{ConstraintRule, PaletteModel, Rgb};
 
 /// Monotonic counter making temp-file names unique within the process.
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -297,8 +297,8 @@ fn parse_image_args(args: &[String]) -> Result<ImageParse, String> {
     }
 
     let machine = machine.ok_or("`--machine` is required")?;
-    let machine_ids: Vec<&str> = mediaspec::machines().iter().map(|m| m.id).collect();
-    let spec = mediaspec::machine(&machine)
+    let machine_ids: Vec<&str> = mediaspec198x::machines().iter().map(|m| m.id).collect();
+    let spec = mediaspec198x::machine(&machine)
         .ok_or_else(|| format!("unknown machine `{machine}` ({})", machine_ids.join(", ")))?;
 
     let format_token = format_token.ok_or("`--format` is required")?;
@@ -788,12 +788,12 @@ fn encode_native(conv: &Conversion, format: Format) -> Result<Vec<u8>, String> {
 /// a diagnostic of this conversion, per `decisions/play198x-boundary.md`.
 ///
 /// The preview is **PAR-corrected to display proportions**: each mode pixel
-/// is duplicated by the mode's `pixel_aspect` from mediaspec — pure integer
+/// is duplicated by the mode's `pixel_aspect` from mediaspec198x — pure integer
 /// duplication, no resampling. C64 multicolour (2:1) doubles each pixel
 /// horizontally (160×200 mode pixels → 320×200 PNG); Amiga hires (1:2)
 /// doubles each row (640×256 → 640×512); square-pixel modes emit 1:1.
 fn render_preview_png(conv: &Conversion) -> Result<Vec<u8>, String> {
-    let mode = mediaspec::machine(&conv.machine_id)
+    let mode = mediaspec198x::machine(&conv.machine_id)
         .and_then(|m| m.mode(&conv.mode_name))
         .ok_or_else(|| {
             format!(
@@ -878,7 +878,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
 /// conversion ran); generated palettes are per image, so the colours echo
 /// the first successful conversion (empty when none succeeded).
 fn palette_section(a: &ImageArgs, conv: Option<ResolvedPalette>) -> PaletteSection {
-    let spec = mediaspec::machine(&a.machine);
+    let spec = mediaspec198x::machine(&a.machine);
     match spec.map(|m| &m.palette) {
         Some(PaletteModel::Gamut { bits_per_gun }) => PaletteSection::Generated {
             gamut_bits: *bits_per_gun,
@@ -962,7 +962,7 @@ fn render_report(a: &ImageArgs, palette: &PaletteSection, entries: &[FileEntry])
     ));
     s.push_str(&format!(
         "  \"mediaspec_version\": \"{}\",\n",
-        json_escape(mediaspec::VERSION)
+        json_escape(mediaspec198x::VERSION)
     ));
     s.push_str(&format!(
         "  \"machine\": \"{}\",\n",

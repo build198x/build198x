@@ -32,7 +32,7 @@
 //! implementation to byte-diff against.
 //!
 //! Layering (`decisions/module-and-crate-naming.md`): `convert::*` may
-//! depend on `mediaspec` and `image`; `format::*` stays dependency-free and
+//! depend on `mediaspec198x` and `image`; `format::*` stays dependency-free and
 //! receives already-constrained indexed data from here.
 
 pub mod colour;

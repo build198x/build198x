@@ -10,10 +10,13 @@
 # Versioning is lockstep: every workspace crate inherits its version from
 # [workspace.package] in Cargo.toml, so a single bump applies everywhere.
 #
-# publish = false: we do NOT publish to crates.io (the binary ships via the
-# GitHub Release instead, and generic crate names shouldn't be claimed
-# there). git_release_enable = false: cargo-dist owns the GitHub Release,
-# not release-plz — release-plz only bumps, changelogs, and tags.
+# publish = false is the workspace default, with one deliberate exception:
+# mediaspec198x (see its [[package]] block below). Everything else ships as a
+# binary via the GitHub Release rather than the registry. Generic crate names
+# still aren't claimed on crates.io — which is exactly why the spec crate is
+# `mediaspec198x` and not `mediaspec`. git_release_enable = false: cargo-dist
+# owns the GitHub Release, not release-plz — release-plz only bumps,
+# changelogs, and tags.
 [workspace]
 publish = false
 git_release_enable = false
@@ -44,19 +47,31 @@ git_only = true
 #   name = "<library-crate>"
 #   git_tag_enable = false
 
-# mediaspec: the authored media capability spec (zero-dep library; Emu198x
-# consumes it by pinned git rev). Bumps in lockstep but never tags.
+# mediaspec198x: the authored media capability spec (zero-dep library). The one
+# crate here that is versioned independently of the workspace's lockstep
+# version, and it publishes to crates.io. Four orgs are told to consume it
+# (Emu198x, Play198x, Forge198x, Studio198x) and a published consumer cannot
+# depend on a git revision, so the registry is the only route that works.
+#
+# git_tag_enable = false / git_release_enable = false, and deliberately so: the
+# tag release-plz would cut, `mediaspec198x-vX.Y.Z`, matches release.yml's
+# version-tag pattern and would hand cargo-dist a library it cannot build —
+# the isa-disasm junk-release failure recorded above. crates.io is this crate's
+# distribution; it needs no tag and no GitHub Release. Its version baseline is
+# the registry, which is what publish = true gives it.
 [[package]]
-name = "mediaspec"
+name = "mediaspec198x"
+publish = true
 git_tag_enable = false
+git_release_enable = false
 
 # build198x-adf: the standalone ADF binary (a lean frontend over the library).
 # It has a binary, so cargo-dist builds it — but it rides the single
 # build198x-vX.Y.Z release tag rather than tagging on its own, so both binaries
 # land in one GitHub Release. Bumps in lockstep, never tags. It is also
 # published to crates.io (for `cargo install build198x-adf`) by the OIDC step in
-# release-plz.yml — the only crate here that publishes; build198x and mediaspec
-# stay publish = false. Lockstep is intentional: build198x-adf's crates.io
+# release-plz.yml; build198x stays publish = false, and mediaspec198x publishes
+# through release-plz itself. Lockstep is intentional: build198x-adf's crates.io
 # version tracks the build198x tool suite it belongs to. (Independent versioning
 # was considered and rejected — it would re-create the cargo-dist/git_only
 # workarounds the ADF library was moved to format198x to escape.)

@@ -9,7 +9,7 @@
 //! mechanically — any edit to a shipped table fails the test and forces a
 //! new `…-v2` name instead.
 
-use mediaspec::{ConstraintRule, PaletteModel, Ratio, Rgb, machine, rgb};
+use mediaspec198x::{ConstraintRule, PaletteModel, Ratio, Rgb, machine, rgb};
 
 /// Spectrum paper is 256×192 with 32×24 cells of 8×8
 /// (`syntheses/zx-spectrum/screen-and-attribute-memory.md` §§ 1, 6).

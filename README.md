@@ -11,7 +11,7 @@ build198x beeper <input.bpr> [--repeat <n>]                # phrase notation →
 
 ## The tools
 
-**`image`** — converts modern images to native screen formats: Spectrum `.scr`, C64 Koala and Art Studio, Amiga IFF/ILBM. Spec-driven (the [`mediaspec`](crates/mediaspec) capability layer describes each machine's constraints; the pipeline searches within them), deterministic byte-for-byte across platforms for PNG input, and emitting a machine-readable JSON report. First consumer: Code198x curriculum art.
+**`image`** — converts modern images to native screen formats: Spectrum `.scr`, C64 Koala and Art Studio, Amiga IFF/ILBM. Spec-driven (the [`mediaspec198x`](crates/mediaspec198x) capability layer describes each machine's constraints; the pipeline searches within them), deterministic byte-for-byte across platforms for PNG input, and emitting a machine-readable JSON report. First consumer: Code198x curriculum art.
 
 **`beeper`** — turns a textual phrase notation (notes, durations, rests) into two renderings of one timing model: a square-wave WAV for fast audition by ear, and the phrase as ZX Spectrum assembly in the table-free `beep`/`rest` idiom the Code198x curriculum teaches. Calibrated by regenerating Gloaming's hand-authored phrase constants exactly. First consumer: Gloaming's audio pass. The tool emits phrases, never the playback routines — those stay hand-written curriculum content.
 

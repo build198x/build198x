@@ -3,9 +3,17 @@
 # converter's image/palette dependency graph. Binding decision:
 # 198x/decisions/shared-media-spec.md ("Zero dependencies, const Rust").
 [package]
-name = "mediaspec"
+name = "mediaspec198x"
 description = "Authored media capability spec for the 198x family — screen modes, constraint rules, and palettes for retro graphics targets."
-version.workspace = true
+# Independently versioned and published, unlike the rest of this workspace.
+# Four orgs consume it (Emu198x, Play198x, Forge198x, Studio198x), and a
+# published consumer cannot depend on a git revision. Starts at 0.1.0: the
+# 0.2.x line was this workspace's lockstep version, never a released identity
+# for this crate.
+version = "0.1.0"
+keywords = ["retro", "palette", "graphics", "spectrum", "c64"]
+categories = ["graphics", "emulators"]
+readme = "README.md"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

@@ -51,7 +51,7 @@ fn at_target_dims_resample_is_byte_identical() {
 
 #[test]
 fn at_paper_dims_letterbox_is_byte_identical() {
-    let mode = mediaspec::machine("sinclair-zx-spectrum")
+    let mode = mediaspec198x::machine("sinclair-zx-spectrum")
         .expect("machine")
         .mode("standard")
         .expect("mode");
@@ -75,7 +75,7 @@ fn fit_rect_honours_c64_multicolour_pixel_aspect() {
     // C64 multicolour pixels are 2:1, so the 160×200 paper displays as
     // 320×200. A square 100×100 source must fill the height and take
     // 100·200/(100·2) = 100 mode pixels of width, centred at x = 30.
-    let mode = mediaspec::machine("commodore-c64")
+    let mode = mediaspec198x::machine("commodore-c64")
         .expect("machine")
         .mode("multicolour-bitmap")
         .expect("mode");
@@ -87,7 +87,7 @@ fn fit_rect_honours_c64_multicolour_pixel_aspect() {
 fn fit_rect_letterboxes_a_wide_source() {
     // 512×100 onto the Spectrum's square-pixel 256×192: width binds,
     // height = 100·256/512 = 50, centred at y = (192−50)/2 = 71.
-    let mode = mediaspec::machine("sinclair-zx-spectrum")
+    let mode = mediaspec198x::machine("sinclair-zx-spectrum")
         .expect("machine")
         .mode("standard")
         .expect("mode");
