@@ -101,18 +101,26 @@ checksum = "d199fb993f75e704d455cff5f1db2d8a61aca91c93bb89f9ab268e077a24d703"
 [[package]]
 name = "format-commodore-amiga-ilbm"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d791f29d78966e5dcb0fcc21bede233737c3cf597a3a1fae61652077dff88479"
 
 [[package]]
 name = "format-commodore-c64-art-studio"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68d4cc0f3d810c1d7b2166771c8bfde4dab4781d692dc414aedea1f5df7e66fd"
 
 [[package]]
 name = "format-commodore-c64-koala"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5901f43be573f1cc79426434bdd3a4b9b82e0bf7be3053a2763de57a07122e6f"
 
 [[package]]
 name = "format-sinclair-zx-spectrum-scr"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cedb882d26ef8116f7e14968ded42bd8cbca1a59f73f3047cc389f33c547652"
 
 [[package]]
 name = "gif"

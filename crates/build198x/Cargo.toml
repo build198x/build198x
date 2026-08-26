@@ -21,16 +21,13 @@ mediaspec = { path = "../mediaspec", version = "0.2.0" }
 # (github.com/format198x/format198x), consumed here from crates.io like any
 # external user. The `adf` subcommand delegates to it.
 format-commodore-amiga-adf = "0.2.0"
-# The four screen-format codecs graduated to Format198x once Play198x became
-# a second consumer (decisions/module-and-crate-naming.md). During this
-# in-progress extraction they resolve from the sibling checkout by path; the
-# version alongside each is what release-plz's cargo-package step needs to
-# publish build198x (it refuses a bare path dep) and is what these four will
-# resolve to from crates.io once they are published there.
-format-sinclair-zx-spectrum-scr = { path = "../../../../Format198x/format198x/crates/format-sinclair-zx-spectrum-scr", version = "0.1.0" }
-format-commodore-c64-koala = { path = "../../../../Format198x/format198x/crates/format-commodore-c64-koala", version = "0.1.0" }
-format-commodore-c64-art-studio = { path = "../../../../Format198x/format198x/crates/format-commodore-c64-art-studio", version = "0.1.0" }
-format-commodore-amiga-ilbm = { path = "../../../../Format198x/format198x/crates/format-commodore-amiga-ilbm", version = "0.1.0" }
+# The four screen-format codecs graduated to Format198x now that they live
+# in their own org (github.com/format198x/format198x). Consumed from
+# crates.io like any external user, same as the ADF crate above.
+format-sinclair-zx-spectrum-scr = "0.1.0"
+format-commodore-c64-koala = "0.1.0"
+format-commodore-c64-art-studio = "0.1.0"
+format-commodore-amiga-ilbm = "0.1.0"
 # Decode + DynamicImage only. default-features = false keeps the decoder set
 # explicit (PNG is the byte-identical contract; JPEG/GIF are accepted
 # best-effort — decisions/determinism-contract.md) and keeps `rayon` out:
