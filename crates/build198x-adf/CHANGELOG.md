@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.1...build198x-adf-v0.2.2) - 2026-08-26
+
+### Added
+
+- *(adf)* add create verb to build198x-adf (general Volume builder)
+- *(adf)* add verify and info verbs to build198x-adf
+- add FFS support and fix a protection bug that broke KS2.0+ boots
+- add the standalone build198x-adf binary
+
+### Other
+
+- follow the format crates to their org-prefixed names
+- release v0.2.1 ([#7](https://github.com/build198x/build198x/pull/7))
+- *(adf)* describe build198x-adf as the full read/write ADF tool
+- build198x-adf description + doc header reflect FFS support
+- make build198x-adf publish-ready for crates.io
+- consume format-commodore-amiga-adf from crates.io, not the workspace
+
 ## [0.2.1](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.0...build198x-adf-v0.2.1) - 2026-07-10
 
 ### Added

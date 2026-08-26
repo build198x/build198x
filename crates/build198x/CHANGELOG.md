@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/build198x/build198x/compare/build198x-v0.2.1...build198x-v0.2.2) - 2026-08-26
+
+### Fixed
+
+- consume the graduated format crates from crates.io, not a sibling path
+- pin version alongside the format crate path deps
+
+### Other
+
+- follow the format crates to their org-prefixed names
+- Merge branch 'main' into refactor/consume-format-crates
+- consume the graduated format crates
+
 ## [0.2.1](https://github.com/build198x/build198x/compare/build198x-v0.2.0...build198x-v0.2.1) - 2026-07-10
 
 ### Added
