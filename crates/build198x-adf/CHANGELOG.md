@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.2...build198x-adf-v0.2.3) - 2026-08-27
+
+### Fixed
+
+- **`verify` called ordinary data disks corrupt.** Any disk whose boot-checksum
+  field is zero was reported as `corrupt ADF: boot checksum`. AmigaDOS `Format`
+  leaves that field zero until `Install` writes a bootstrap, so a plain data
+  disk — including every disk `xdftool` produces — failed. A formatted disk
+  with no bootstrap now verifies, and a disk that *does* carry a bootstrap must
+  still have the right checksum.
+- **A disk could only be filled halfway.** `master` and `create` refused
+  anything over about 432 KB on an 880 KB floppy, because blocks were allocated
+  upward from the root block and the whole lower half of the disk was never
+  used. A DD floppy now takes about 886 KB — 98% of the media rather than 49%.
+
+Both come from `format198x-commodore-amiga-adf` 0.3.0
+([#22](https://github.com/build198x/build198x/pull/22)). Output is unchanged
+byte-for-byte: the same executable mastered through the old and new versions
+produces an identical image.
+
+### Other
+
+- `mediaspec198x`, the media capability spec, is now published as its own crate
+  rather than consumed from a git revision
+  ([#17](https://github.com/build198x/build198x/pull/17)). No change to what
+  this tool does.
+- Tracks Rust 1.98.0 ([#21](https://github.com/build198x/build198x/pull/21)).
+
 ## [0.2.2](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.1...build198x-adf-v0.2.2) - 2026-08-26
 
 ### Added
