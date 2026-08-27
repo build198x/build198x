@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/build198x/build198x/compare/build198x-v0.2.2...build198x-v0.2.3) - 2026-08-27
+
+### Added
+
+- publish the media capability spec as mediaspec198x ([#17](https://github.com/build198x/build198x/pull/17))
+
+### Fixed
+
+- *(deps)* take the ADF fix that stops ordinary data disks reading as corrupt ([#22](https://github.com/build198x/build198x/pull/22))
+
+### Other
+
+- track Rust 1.98.0 ([#21](https://github.com/build198x/build198x/pull/21))
+
 ## [0.2.2](https://github.com/build198x/build198x/compare/build198x-v0.2.1...build198x-v0.2.2) - 2026-08-26
 
 ### Fixed
