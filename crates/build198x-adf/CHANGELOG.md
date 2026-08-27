@@ -18,9 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no bootstrap now verifies, and a disk that *does* carry a bootstrap must
   still have the right checksum.
 - **A disk could only be filled halfway.** `master` and `create` refused
-  anything over about 432 KB on an 880 KB floppy, because blocks were allocated
+  anything over about 432K on an 880K floppy, because blocks were allocated
   upward from the root block and the whole lower half of the disk was never
-  used. A DD floppy now takes about 886 KB — 98% of the media rather than 49%.
+  used. A single file now reaches about 865K — 98% of the media rather than 49%.
 
 Both come from `format198x-commodore-amiga-adf` 0.3.0
 ([#22](https://github.com/build198x/build198x/pull/22)). Output is unchanged
