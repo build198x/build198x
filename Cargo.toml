@@ -52,6 +52,19 @@ ci = "github"
 installers = []
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 pr-run-mode = "plan"
+# Restrict dist to tags that start with this. Without it, dist fires on *any*
+# version-shaped tag — `**[0-9]+.[0-9]+.[0-9]+*` — so tagging a library crate
+# hands it a package it cannot build. Asm198x's isa-disasm did exactly that
+# once: a GitHub Release containing only a dist-manifest.json, which then took
+# the "Latest" badge.
+#
+# The family's `{org}198x-` crate naming makes this free: the existing
+# `build198x-vX.Y.Z` tags already carry the prefix, so no tag was rewritten and
+# no history moved. It also means a library crate added later cannot re-create
+# that failure by being forgotten — the tag simply does not match.
+#
+# Note this renames the generated workflow to build198x-release.yml.
+tag-namespace = "build198x"
 # Announce each release in Discord. A custom job rather than an `on: release`
 # workflow: the release is cut by `gh release create` with GITHUB_TOKEN, and a
 # release created with that token fires no `release: published` event for
