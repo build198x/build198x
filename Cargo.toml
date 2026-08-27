@@ -52,6 +52,11 @@ ci = "github"
 installers = []
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 pr-run-mode = "plan"
+# Announce each release in Discord. A custom job rather than an `on: release`
+# workflow: the release is cut by `gh release create` with GITHUB_TOKEN, and a
+# release created with that token fires no `release: published` event for
+# another workflow to catch. See .github/workflows/notify-discord.yml.
+post-announce-jobs = ["./notify-discord"]
 
 [profile.dist]
 inherits = "release"
