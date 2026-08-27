@@ -77,13 +77,29 @@ jobs:
         if: steps.release.outputs.releases_created == 'true'
         env:
           WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          WEBHOOK_ALL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_ALL }}
           RELEASES: ${{ steps.release.outputs.releases }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          if [ -z "${WEBHOOK}" ]; then
-            echo "::notice::DISCORD_RELEASE_WEBHOOK is not set — nothing posted."
+          # Post to this project's own channel and, when set, an aggregate
+          # channel carrying every repo. Built with `if` rather than
+          # `[ -n "$x" ] && arr+=(...)`: under `set -e` a failing test at the end
+          # of a command list exits the step, so the shorter form would abort
+          # whenever a secret is unset — the normal case this tolerates.
+          targets=()
+          if [ -n "${WEBHOOK}" ]; then
+            targets+=("$WEBHOOK")
+          fi
+          # Skip an aggregate pointed at the same channel, so a single-channel
+          # setup that fills both secrets does not post twice.
+          if [ -n "${WEBHOOK_ALL}" ] && [ "${WEBHOOK_ALL}" != "${WEBHOOK}" ]; then
+            targets+=("$WEBHOOK_ALL")
+          fi
+
+          if [ ${#targets[@]} -eq 0 ]; then
+            echo "::notice::no Discord webhook secret set — nothing posted."
             exit 0
           fi
 
@@ -126,9 +142,21 @@ jobs:
                }]
              }' > crates-payload.json
 
-          curl --silent --show-error --fail-with-body \
-               --retry 3 --retry-delay 5 --retry-all-errors \
-               -H "Content-Type: application/json" \
-               -X POST -d @crates-payload.json "$WEBHOOK"
+          # Every target is attempted even if an earlier one fails, so a stale
+          # aggregate URL cannot hide a successful post to the project channel.
+          failed=0
+          for target in "${targets[@]}"; do
+            if ! curl --silent --show-error --fail-with-body \
+                      --retry 3 --retry-delay 5 --retry-all-errors \
+                      -H "Content-Type: application/json" \
+                      -X POST -d @crates-payload.json "$target"; then
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::at least one Discord post failed; see the output above."
+            exit 1
+          fi
 
           echo "Announced ${count} crates.io publish(es) to Discord."
