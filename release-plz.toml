@@ -35,21 +35,21 @@ changelog_update = true
 # publish. It therefore sits on build198x's own [[package]] block, which is the
 # only crate that needs it.
 
-# Library crates are not dist-able (no binary) and never ship independently —
-# they exist only as dependencies of `build198x`. cargo-dist's release.yml
-# fires on any version-like tag and errors on a non-dist-able package, so a
-# `<lib>-vX.Y.Z` tag would produce a failed or junk release run (Asm198x's
-# `isa-disasm` did exactly that once — a Release with only a
-# dist-manifest.json, and it grabbed the "Latest" badge). Keep library crates
-# version-bumped (lockstep) but untagged; only `build198x-vX.Y.Z` drives a
-# release.
+# Library crates ride the lockstep version and are not tagged, because they
+# exist only as dependencies of `build198x` and have nothing to release on
+# their own. That is now a preference rather than a requirement: with
+# tag-namespace = "build198x" set in Cargo.toml, cargo-dist only answers to
+# tags carrying that prefix, so a `<lib>-vX.Y.Z` tag reaches nothing.
 #
-# When a unit adds another library crate under crates/, add a block for it
-# here in the same change:
+# Before the namespace existed it was load-bearing. cargo-dist fired on any
+# version-shaped tag and errored on a package with no binary, so a library tag
+# produced a failed or junk release run — Asm198x's `isa-disasm` did exactly
+# that once, cutting a Release containing only a dist-manifest.json which then
+# took the "Latest" badge. A library crate added without a block here would
+# have reproduced it.
 #
-#   [[package]]
-#   name = "<library-crate>"
-#   git_tag_enable = false
+# It no longer can. A new library crate needs a block here only if you want it
+# left untagged; forgetting one is no longer a way to break a release.
 
 # mediaspec198x: the authored media capability spec (zero-dep library). The one
 # crate here that is versioned independently of the workspace's lockstep
@@ -57,12 +57,14 @@ changelog_update = true
 # (Emu198x, Play198x, Forge198x, Studio198x) and a published consumer cannot
 # depend on a git revision, so the registry is the only route that works.
 #
-# git_tag_enable = false / git_release_enable = false, and deliberately so: the
-# tag release-plz would cut, `mediaspec198x-vX.Y.Z`, matches release.yml's
-# version-tag pattern and would hand cargo-dist a library it cannot build —
-# the isa-disasm junk-release failure recorded above. crates.io is this crate's
-# distribution; it needs no tag and no GitHub Release. Its version baseline is
-# the registry, which is what publish = true gives it.
+# It tags and cuts its own GitHub Release, which the tag namespace above makes
+# safe: `mediaspec198x-vX.Y.Z` does not carry the `build198x` prefix, so
+# cargo-dist never sees it. Its version baseline is the registry, which
+# publish = true gives it.
+#
+# The release earns its keep. crates.io lists versions and carries no notes, so
+# a consumer in another org deciding whether to take the next version had
+# nothing to read — and this crate is consumed by four of them.
 # build198x: the CLI. Never published — the binary ships via cargo-dist — so it
 # has no registry baseline and release-plz would silently never bump it. That is
 # what git_only fixes, and it must sit here rather than on [workspace]:
@@ -76,8 +78,8 @@ git_only = true
 [[package]]
 name = "mediaspec198x"
 publish = true
-git_tag_enable = false
-git_release_enable = false
+git_tag_enable = true
+git_release_enable = true
 
 # build198x-adf: the standalone ADF binary (a lean frontend over the library).
 # It has a binary, so cargo-dist builds it — but it rides the single
