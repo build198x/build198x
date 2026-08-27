@@ -60,3 +60,75 @@ jobs:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # Announce crates.io publishes in Discord.
+      #
+      # Separate from the Discord post that release.yml makes: that one covers
+      # the binary GitHub Release, which is cargo-dist's. This covers the
+      # registry, which is release-plz's — and mediaspec198x has no GitHub
+      # Release at all (git_tag_enable = false in release-plz.toml, because a
+      # version tag would fire cargo-dist on a library it cannot build), so
+      # without this its publishes are announced nowhere.
+      #
+      # Membership is decided by asking crates.io rather than by listing crate
+      # names here, so a crate that starts or stops publishing needs no edit:
+      # build198x itself is publish = false and is skipped automatically.
+      - name: Announce crates.io publishes in Discord
+        if: steps.release.outputs.releases_created == 'true'
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          RELEASES: ${{ steps.release.outputs.releases }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${WEBHOOK}" ]; then
+            echo "::notice::DISCORD_RELEASE_WEBHOOK is not set — nothing posted."
+            exit 0
+          fi
+
+          published='[]'
+          while read -r pkg version; do
+            [ -n "$pkg" ] || continue
+            if curl -sf -A "198x-ci" \
+                 "https://crates.io/api/v1/crates/$pkg/$version" >/dev/null; then
+              published=$(jq -c --arg p "$pkg" --arg v "$version" \
+                            '. + [{package_name: $p, version: $v}]' <<<"$published")
+            else
+              echo "$pkg $version is not on crates.io — not a registry publish, skipping."
+            fi
+          done < <(jq -r '.[] | "\(.package_name) \(.version)"' <<<"$RELEASES")
+
+          count=$(jq 'length' <<<"$published")
+          if [ "$count" = "0" ]; then
+            echo "::notice::nothing published to crates.io in this run."
+            exit 0
+          fi
+
+          # One message for the run, a field per crate — same shape as
+          # format198x's, which releases several crates per cycle too.
+          jq -n \
+            --argjson releases "$published" \
+            --arg repo "$REPO" \
+            --arg title "$( [ "$count" = "1" ] && echo "build198x — 1 crate published to crates.io" || echo "build198x — ${count} crates published to crates.io" )" \
+            '{
+               username: "198x releases",
+               embeds: [{
+                 title: $title,
+                 url: ("https://crates.io/crates/" + $releases[0].package_name),
+                 color: 3447003,
+                 fields: ($releases | map({
+                   name: (.package_name + " v" + .version),
+                   value: ("[crates.io](https://crates.io/crates/" + .package_name + "/" + .version + ")"),
+                   inline: false
+                 })),
+                 footer: { text: $repo }
+               }]
+             }' > crates-payload.json
+
+          curl --silent --show-error --fail-with-body \
+               --retry 3 --retry-delay 5 --retry-all-errors \
+               -H "Content-Type: application/json" \
+               -X POST -d @crates-payload.json "$WEBHOOK"
+
+          echo "Announced ${count} crates.io publish(es) to Discord."
