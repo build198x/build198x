@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.5...build198x-adf-v0.2.6) - 2026-08-28
+
+### Added
+
+- *(adf)* add recursive inspection and provenance manifests ([#42](https://github.com/build198x/build198x/pull/42))
+
 ## [0.2.5](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.4...build198x-adf-v0.2.5) - 2026-08-28
 
 ### Added
