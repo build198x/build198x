@@ -19,7 +19,7 @@ default-members = ["crates/build198x"]
 
 [workspace.package]
 edition = "2024"
-version = "0.2.3"
+version = "0.2.4"
 license = "GPL-2.0-or-later"
 repository = "https://github.com/build198x/build198x"
 # The Homebrew formula carries a homepage; without one `dist` warns and the

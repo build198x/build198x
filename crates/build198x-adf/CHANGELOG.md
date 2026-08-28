@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.3...build198x-adf-v0.2.4) - 2026-08-28
+
+### Other
+
+- Ship installers and a Homebrew tap, like Asm198x has ([#31](https://github.com/build198x/build198x/pull/31))
+- correct a capacity figure that mixed two kinds of kilobyte ([#24](https://github.com/build198x/build198x/pull/24))
+
 ## [0.2.3](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.2...build198x-adf-v0.2.3) - 2026-08-27
 
 ### Fixed
