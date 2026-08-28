@@ -1,0 +1,68 @@
+name: PR title
+
+# release-plz reads commit subjects on main to decide the version bump and to
+# write the CHANGELOG entry. Squash merge — the route every change here takes —
+# puts the *pull request title* in that subject, so an unprefixed title reaches
+# main as an unparsed commit: it cannot move the version, and it lands in the
+# changelog under "Other" as raw prose.
+#
+# The title is the one thing CI cannot otherwise see. It is written after the
+# commits, is editable up to the moment of merge, and no local hook runs on it.
+# Hence a gate of its own, on `edited` as well as the usual events, so fixing
+# the title re-runs the check.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  conventional:
+    name: PR title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the title carries a conventional-commit prefix
+        env:
+          # Via the environment, never interpolated into the script: a title is
+          # attacker-controlled text and `${{ }}` would splice it into the shell.
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          # The Angular type set, which is what git-cliff (inside release-plz)
+          # parses. `feat` and `fix` drive the bump; the rest are recorded.
+          types='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
+
+          # <type>[(scope)][!]: <description>
+          if printf '%s' "$TITLE" | grep -Eq "^(${types})(\([a-z0-9._/-]+\))?!?: .+"; then
+            echo "OK: $TITLE"
+            exit 0
+          fi
+
+          cat >&2 <<EOF
+          The pull request title is not a conventional commit:
+
+              $TITLE
+
+          Squash merge writes this title as the commit subject on main, where
+          release-plz reads it. Without a prefix it cannot bump the version and
+          the changelog entry is unusable.
+
+          Use <type>: <description>, for example:
+
+              feat(adf): let the caller set file protection bits
+              fix: stop verify rejecting disks with no bootstrap
+              docs: describe the ADF create verb
+
+          Types: ${types//|/, }
+          Add ! before the colon for a breaking change.
+
+          Edit the title and this check re-runs on its own.
+          EOF
+          exit 1
