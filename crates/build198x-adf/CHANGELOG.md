@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.4...build198x-adf-v0.2.5) - 2026-08-28
+
+### Added
+
+- **Prebuilt binaries and a Homebrew formula — the first release to carry
+  either.** Until now this crate rode the CLI's `build198x-vX.Y.Z` tag, and
+  that tag names a package, so cargo-dist built that one package and dropped
+  the rest of the workspace. Two releases shipped with no adf archives at all
+  ([#34](https://github.com/build198x/build198x/issues/34)). It tags itself
+  now ([#37](https://github.com/build198x/build198x/pull/37)):
+
+  ```
+  brew install build198x/homebrew-tap/build198x-adf
+  ```
+
+  Shell and PowerShell installers ship beside the archives, and
+  `cargo install build198x-adf` works as it always has. The tool itself is
+  unchanged — this release is how you get it, not what it does.
+
 ## [0.2.4](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.3...build198x-adf-v0.2.4) - 2026-08-28
 
 ### Other
