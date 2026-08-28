@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5](https://github.com/build198x/build198x/compare/build198x-v0.2.4...build198x-v0.2.5) - 2026-08-28
+
+### Other
+
+- Version bump only; nothing in this tool changed. The workspace versions in
+  lockstep, and the release exists for `build198x-adf`, which gets its first
+  prebuilt binaries and Homebrew formula
+  ([#37](https://github.com/build198x/build198x/pull/37)). `build198x adf` is
+  unaffected — it has always been in this binary.
+
 ## [0.2.4](https://github.com/build198x/build198x/compare/build198x-v0.2.3...build198x-v0.2.4) - 2026-08-28
 
 ### Added
