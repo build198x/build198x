@@ -3,7 +3,9 @@
 # Trigger: every push to main runs release-plz, which opens (or updates) a
 # "chore: release" PR with a bumped workspace version and a CHANGELOG entry
 # generated from the new commits (conventional-commit prefixes drive the
-# bump). Merging that PR creates a git tag, which fires
+# bump; .github/workflows/pr-title.yml is what keeps them there, since squash
+# merge makes the PR title the commit subject). Merging that PR creates a git
+# tag, which fires
 # .github/workflows/release.yml (cargo-dist) to build the `build198x` CLI and
 # attach the archives to a GitHub Release.
 #
