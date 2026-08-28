@@ -8,7 +8,7 @@
 //! build198x-adf master <exe> -o <out.adf> [flags]                              # master, explicit
 //! build198x-adf create <out.adf> [--add host=dest]... [--mkdir dir]... [flags]  # general volume builder
 //! build198x-adf verify <disk.adf>                                              # integrity check
-//! build198x-adf info   <disk.adf>                                              # label, fs, contents
+//! build198x-adf info   <disk.adf> [--recursive]                                # label, fs, contents
 //! ```
 //!
 //! Output is human-readable by default; pass `--format json` on any verb for a
@@ -287,6 +287,11 @@ fn cmd_info(args: &[String]) -> ExitCode {
         Ok(v) => v,
         Err(e) => return verb_arg_error("info", &e),
     };
+    let recursive = rest.iter().any(|arg| arg == "--recursive");
+    let rest: Vec<String> = rest
+        .into_iter()
+        .filter(|arg| arg != "--recursive")
+        .collect();
     let path = match single_disk_arg("info", &rest) {
         Ok(p) => p,
         Err(code) => return code,
@@ -295,12 +300,12 @@ fn cmd_info(args: &[String]) -> ExitCode {
         Ok(b) => b,
         Err(code) => return code,
     };
-    run_info(&img, &path, fmt)
+    run_info(&img, &path, fmt, recursive)
 }
 
 /// Open an in-memory image and print its label, filesystem, and root listing.
 /// Split from `cmd_info` for the same file-free testability as `run_verify`.
-fn run_info(img: &[u8], path: &str, fmt: Format) -> ExitCode {
+fn run_info(img: &[u8], path: &str, fmt: Format, recursive: bool) -> ExitCode {
     let disk = match Disk::open(img) {
         Ok(d) => d,
         Err(e) => {
@@ -308,16 +313,34 @@ fn run_info(img: &[u8], path: &str, fmt: Format) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let entries = match disk.list("") {
-        Ok(e) => sorted_entries(e),
+    let entries = match if recursive {
+        recursive_entries(&disk)
+    } else {
+        disk.list("").map(sorted_entries).map_err(|e| e.to_string())
+    } {
+        Ok(e) => e,
         Err(e) => {
             eprintln!("build198x-adf: {e}");
             return ExitCode::from(1);
         }
     };
     let line = match fmt {
-        Format::Text => info_text(path, img.len(), disk.filesystem(), &disk.label(), &entries),
-        Format::Json => info_json(path, img.len(), disk.filesystem(), &disk.label(), &entries),
+        Format::Text => info_text(
+            path,
+            img.len(),
+            disk.filesystem(),
+            &disk.label(),
+            &entries,
+            recursive,
+        ),
+        Format::Json => info_json(
+            path,
+            img.len(),
+            disk.filesystem(),
+            &disk.label(),
+            &entries,
+            recursive,
+        ),
     };
     println!("{line}");
     ExitCode::SUCCESS
@@ -325,11 +348,86 @@ fn run_info(img: &[u8], path: &str, fmt: Format) -> ExitCode {
 
 /// Entries sorted by name — the stable order `info` presents.
 fn sorted_entries(mut entries: Vec<Entry>) -> Vec<Entry> {
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries.sort_by(|a, b| amiga_name_cmp(&a.name, &b.name));
     entries
 }
 
-fn info_text(path: &str, img_len: usize, fs: FileSystem, label: &str, entries: &[Entry]) -> String {
+fn amiga_name_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    a.bytes()
+        .map(|byte| byte.to_ascii_lowercase())
+        .cmp(b.bytes().map(|byte| byte.to_ascii_lowercase()))
+        .then_with(|| a.cmp(b))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InfoEntry {
+    path: String,
+    kind: EntryKind,
+    size: u32,
+}
+
+fn recursive_entries(disk: &Disk<'_>) -> Result<Vec<Entry>, String> {
+    let mut flat = Vec::new();
+    let mut seen_dirs = std::collections::BTreeSet::new();
+    seen_dirs.insert(
+        disk.volume_provenance()
+            .map_err(|e| e.to_string())?
+            .root_block,
+    );
+    walk_directory(disk, "", &mut seen_dirs, &mut flat)?;
+    Ok(flat
+        .into_iter()
+        .map(|entry: InfoEntry| Entry {
+            name: entry.path,
+            kind: entry.kind,
+            size: entry.size,
+        })
+        .collect())
+}
+
+fn walk_directory(
+    disk: &Disk<'_>,
+    parent: &str,
+    seen_dirs: &mut std::collections::BTreeSet<u32>,
+    out: &mut Vec<InfoEntry>,
+) -> Result<(), String> {
+    for entry in sorted_entries(disk.list(parent).map_err(|e| e.to_string())?) {
+        let path = if parent.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{parent}/{}", entry.name)
+        };
+        out.push(InfoEntry {
+            path: path.clone(),
+            kind: entry.kind,
+            size: entry.size,
+        });
+        if entry.kind == EntryKind::Directory {
+            let evidence = disk.inspect(&path).map_err(|e| e.to_string())?;
+            let header = evidence
+                .components
+                .last()
+                .ok_or_else(|| format!("{path}: missing directory provenance"))?
+                .header_block;
+            if !seen_dirs.insert(header) {
+                return Err(format!(
+                    "directory block {header} is reached more than once at {path:?}"
+                ));
+            }
+            walk_directory(disk, &path, seen_dirs, out)?;
+        }
+    }
+    Ok(())
+}
+
+fn info_text(
+    path: &str,
+    img_len: usize,
+    fs: FileSystem,
+    label: &str,
+    entries: &[Entry],
+    _recursive: bool,
+) -> String {
     let mut out = format!(
         "{path}: {}K {} \"{label}\"",
         img_len / 1024,
@@ -371,7 +469,14 @@ fn info_text(path: &str, img_len: usize, fs: FileSystem, label: &str, entries: &
     out
 }
 
-fn info_json(path: &str, img_len: usize, fs: FileSystem, label: &str, entries: &[Entry]) -> String {
+fn info_json(
+    path: &str,
+    img_len: usize,
+    fs: FileSystem,
+    label: &str,
+    entries: &[Entry],
+    recursive: bool,
+) -> String {
     let mut out = format!(
         "{{\"tool\":\"adf\",\"command\":\"info\",\"input\":\"{}\",\"filesystem\":\"{}\",\"label\":\"{}\",\"bytes\":{},\"entries\":[",
         json_escape(path),
@@ -387,8 +492,9 @@ fn info_json(path: &str, img_len: usize, fs: FileSystem, label: &str, entries: &
             EntryKind::File => "file",
             EntryKind::Directory => "dir",
         };
+        let name_key = if recursive { "path" } else { "name" };
         out.push_str(&format!(
-            "{{\"name\":\"{}\",\"kind\":\"{}\",\"size\":{}}}",
+            "{{\"{name_key}\":\"{}\",\"kind\":\"{}\",\"size\":{}}}",
             json_escape(&e.name),
             kind,
             e.size
@@ -713,7 +819,7 @@ fn top_usage() -> String {
      \x20 build198x-adf master <exe> -o <out.adf> [flags]  master a hunk exe into a bootable disk\n\
      \x20 build198x-adf create <out.adf> [flags]           build a volume from files and dirs\n\
      \x20 build198x-adf verify <disk.adf>                  check an ADF's integrity\n\
-     \x20 build198x-adf info <disk.adf>                     show label, filesystem, and contents\n\n\
+     \x20 build198x-adf info <disk.adf> [--recursive]       show label, filesystem, and contents\n\n\
      Every verb takes --format text|json (default text). Run `<verb> --help`\n\
      for the verb's own options."
         .to_owned()
@@ -739,9 +845,9 @@ fn verb_usage(verb: &str) -> String {
              \x20 build198x-adf verify <disk.adf> [--format text|json]\n\n\
              Exits 0 if the disk is sound, 1 if it is corrupt or not an ADF."
             .to_owned(),
-        "info" => "build198x-adf info — show an ADF's label, filesystem, and root listing\n\n\
+        "info" => "build198x-adf info — show an ADF's label, filesystem, and contents\n\n\
              Usage:\n\
-             \x20 build198x-adf info <disk.adf> [--format text|json]"
+             \x20 build198x-adf info <disk.adf> [--recursive] [--format text|json]"
             .to_owned(),
         _ => usage(),
     }
@@ -987,13 +1093,49 @@ mod tests {
     #[test]
     fn info_reads_a_good_disk() {
         assert_eq!(
-            run_info(&good_adf(), "good.adf", Format::Text),
+            run_info(&good_adf(), "good.adf", Format::Text, false),
             ExitCode::SUCCESS
         );
         assert_eq!(
-            run_info(&good_adf(), "good.adf", Format::Json),
+            run_info(&good_adf(), "good.adf", Format::Json, false),
             ExitCode::SUCCESS
         );
+    }
+
+    #[test]
+    fn recursive_info_walks_nested_and_empty_directories() {
+        let mut volume = Volume::new("Tree", FileSystem::Ofs);
+        volume.add_dir("Empty").expect("valid directory");
+        volume
+            .add_file("Docs/Nested/large.bin", &vec![0x5a; 40_000])
+            .expect("valid file");
+        volume.add_file("alpha", b"a").expect("valid file");
+        volume.add_file("Beta", b"b").expect("valid file");
+        let image = volume.build().expect("volume fits");
+        let disk = Disk::open(&image).expect("valid image");
+        let entries = recursive_entries(&disk).expect("tree walks");
+        let paths: Vec<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "alpha",
+                "Beta",
+                "Docs",
+                "Docs/Nested",
+                "Docs/Nested/large.bin",
+                "Empty"
+            ]
+        );
+        assert_eq!(entries[4].size, 40_000);
+        let json = info_json(
+            "tree.adf",
+            image.len(),
+            FileSystem::Ofs,
+            "Tree",
+            &entries,
+            true,
+        );
+        assert!(json.contains("\"path\":\"Docs/Nested/large.bin\""));
     }
 
     #[test]
@@ -1006,6 +1148,18 @@ mod tests {
         let sorted = sorted_entries(vec![e("s"), e("c"), e("mygame")]);
         let names: Vec<&str> = sorted.iter().map(|x| x.name.as_str()).collect();
         assert_eq!(names, ["c", "mygame", "s"]);
+    }
+
+    #[test]
+    fn entries_use_case_insensitive_order_with_stable_tie_break() {
+        let e = |name: &str| Entry {
+            name: name.to_owned(),
+            kind: EntryKind::File,
+            size: 0,
+        };
+        let sorted = sorted_entries(vec![e("beta"), e("Alpha"), e("alpha"), e("Beta")]);
+        let names: Vec<&str> = sorted.iter().map(|entry| entry.name.as_str()).collect();
+        assert_eq!(names, ["Alpha", "alpha", "Beta", "beta"]);
     }
 
     #[test]
@@ -1022,7 +1176,7 @@ mod tests {
                 size: 51234,
             },
         ];
-        let json = info_json("d.adf", 901120, FileSystem::Ofs, "MyGame", &entries);
+        let json = info_json("d.adf", 901120, FileSystem::Ofs, "MyGame", &entries, false);
         assert_eq!(
             json,
             "{\"tool\":\"adf\",\"command\":\"info\",\"input\":\"d.adf\",\"filesystem\":\"ofs\",\"label\":\"MyGame\",\"bytes\":901120,\"entries\":[{\"name\":\"c\",\"kind\":\"dir\",\"size\":0},{\"name\":\"mygame\",\"kind\":\"file\",\"size\":51234}]}"
@@ -1043,7 +1197,7 @@ mod tests {
                 size: 51234,
             },
         ];
-        let text = info_text("d.adf", 901120, FileSystem::Ofs, "MyGame", &entries);
+        let text = info_text("d.adf", 901120, FileSystem::Ofs, "MyGame", &entries, false);
         assert!(text.starts_with("d.adf: 880K OFS \"MyGame\""));
         assert!(text.contains("mygame"));
         assert!(text.contains("51234"));

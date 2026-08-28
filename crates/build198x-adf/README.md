@@ -27,6 +27,7 @@ build198x-adf create game.adf --add mygame=c/mygame --startup mygame   # bootabl
 # check integrity (exit 0 sound, 1 corrupt) and inspect contents:
 build198x-adf verify mygame.adf
 build198x-adf info mygame.adf
+build198x-adf info --recursive mygame.adf  # complete tree, with full paths
 ```
 
 Output is human-readable by default; pass `--format json` on any verb for a
@@ -40,7 +41,8 @@ single machine-readable line. Disks are written atomically.
 - **`create <out.adf>`** — assemble a volume from `--add host[=dest]` files and
   `--mkdir` directories; `--bootable` / `--startup <cmd>` for a boot disk.
 - **`verify <disk.adf>`** — deep checksum + structure check.
-- **`info <disk.adf>`** — label, filesystem, and root listing.
+- **`info <disk.adf>`** — label, filesystem, and root listing; add
+  `--recursive` for a deterministic complete-tree listing.
 
 ## Notes
 

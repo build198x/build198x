@@ -1593,6 +1593,11 @@ fn adf_info(args: &[String]) -> ExitCode {
         Ok(v) => v,
         Err(e) => return adf_verb_arg_error("info", &e),
     };
+    let recursive = rest.iter().any(|arg| arg == "--recursive");
+    let rest: Vec<String> = rest
+        .into_iter()
+        .filter(|arg| arg != "--recursive")
+        .collect();
     let path = match adf_single_disk_arg("info", &rest) {
         Ok(p) => p,
         Err(code) => return code,
@@ -1601,11 +1606,11 @@ fn adf_info(args: &[String]) -> ExitCode {
         Ok(b) => b,
         Err(code) => return code,
     };
-    adf_run_info(&img, &path, fmt)
+    adf_run_info(&img, &path, fmt, recursive)
 }
 
 /// Open an in-memory image and print its label, filesystem, and root listing.
-fn adf_run_info(img: &[u8], path: &str, fmt: AdfFormat) -> ExitCode {
+fn adf_run_info(img: &[u8], path: &str, fmt: AdfFormat, recursive: bool) -> ExitCode {
     let disk = match adf::Disk::open(img) {
         Ok(d) => d,
         Err(e) => {
@@ -1613,8 +1618,14 @@ fn adf_run_info(img: &[u8], path: &str, fmt: AdfFormat) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let entries = match disk.list("") {
-        Ok(e) => adf_sorted_entries(e),
+    let entries = match if recursive {
+        adf_recursive_entries(&disk)
+    } else {
+        disk.list("")
+            .map(adf_sorted_entries)
+            .map_err(|e| e.to_string())
+    } {
+        Ok(e) => e,
         Err(e) => {
             eprintln!("build198x adf: {e}");
             return ExitCode::from(1);
@@ -1624,9 +1635,14 @@ fn adf_run_info(img: &[u8], path: &str, fmt: AdfFormat) -> ExitCode {
         AdfFormat::Text => {
             adf_info_text(path, img.len(), disk.filesystem(), &disk.label(), &entries)
         }
-        AdfFormat::Json => {
-            adf_info_json(path, img.len(), disk.filesystem(), &disk.label(), &entries)
-        }
+        AdfFormat::Json => adf_info_json(
+            path,
+            img.len(),
+            disk.filesystem(),
+            &disk.label(),
+            &entries,
+            recursive,
+        ),
     };
     println!("{line}");
     ExitCode::SUCCESS
@@ -1634,8 +1650,62 @@ fn adf_run_info(img: &[u8], path: &str, fmt: AdfFormat) -> ExitCode {
 
 /// Entries sorted by name — the stable order `info` presents.
 fn adf_sorted_entries(mut entries: Vec<adf::Entry>) -> Vec<adf::Entry> {
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries.sort_by(|a, b| adf_amiga_name_cmp(&a.name, &b.name));
     entries
+}
+
+fn adf_amiga_name_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    a.bytes()
+        .map(|byte| byte.to_ascii_lowercase())
+        .cmp(b.bytes().map(|byte| byte.to_ascii_lowercase()))
+        .then_with(|| a.cmp(b))
+}
+
+fn adf_recursive_entries(disk: &adf::Disk<'_>) -> Result<Vec<adf::Entry>, String> {
+    let mut entries = Vec::new();
+    let mut seen_dirs = std::collections::BTreeSet::new();
+    seen_dirs.insert(
+        disk.volume_provenance()
+            .map_err(|e| e.to_string())?
+            .root_block,
+    );
+    adf_walk_directory(disk, "", &mut seen_dirs, &mut entries)?;
+    Ok(entries)
+}
+
+fn adf_walk_directory(
+    disk: &adf::Disk<'_>,
+    parent: &str,
+    seen_dirs: &mut std::collections::BTreeSet<u32>,
+    out: &mut Vec<adf::Entry>,
+) -> Result<(), String> {
+    for entry in adf_sorted_entries(disk.list(parent).map_err(|e| e.to_string())?) {
+        let path = if parent.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{parent}/{}", entry.name)
+        };
+        out.push(adf::Entry {
+            name: path.clone(),
+            kind: entry.kind,
+            size: entry.size,
+        });
+        if entry.kind == adf::EntryKind::Directory {
+            let evidence = disk.inspect(&path).map_err(|e| e.to_string())?;
+            let header = evidence
+                .components
+                .last()
+                .ok_or_else(|| format!("{path}: missing directory provenance"))?
+                .header_block;
+            if !seen_dirs.insert(header) {
+                return Err(format!(
+                    "directory block {header} is reached more than once at {path:?}"
+                ));
+            }
+            adf_walk_directory(disk, &path, seen_dirs, out)?;
+        }
+    }
+    Ok(())
 }
 
 fn adf_info_text(
@@ -1692,6 +1762,7 @@ fn adf_info_json(
     fs: adf::FileSystem,
     label: &str,
     entries: &[adf::Entry],
+    recursive: bool,
 ) -> String {
     let mut out = format!(
         "{{\"tool\":\"adf\",\"command\":\"info\",\"input\":\"{}\",\"filesystem\":\"{}\",\"label\":\"{}\",\"bytes\":{},\"entries\":[",
@@ -1708,8 +1779,9 @@ fn adf_info_json(
             adf::EntryKind::File => "file",
             adf::EntryKind::Directory => "dir",
         };
+        let name_key = if recursive { "path" } else { "name" };
         out.push_str(&format!(
-            "{{\"name\":\"{}\",\"kind\":\"{}\",\"size\":{}}}",
+            "{{\"{name_key}\":\"{}\",\"kind\":\"{}\",\"size\":{}}}",
             json_escape(&e.name),
             kind,
             e.size
@@ -2158,7 +2230,7 @@ mod tests {
     #[test]
     fn adf_info_reads_a_good_disk() {
         assert_eq!(
-            adf_run_info(&adf_good_disk(), "good.adf", AdfFormat::Json),
+            adf_run_info(&adf_good_disk(), "good.adf", AdfFormat::Json, false),
             ExitCode::SUCCESS
         );
     }
@@ -2190,7 +2262,14 @@ mod tests {
             },
         ];
         assert_eq!(
-            adf_info_json("d.adf", 901120, adf::FileSystem::Ofs, "MyGame", &entries),
+            adf_info_json(
+                "d.adf",
+                901120,
+                adf::FileSystem::Ofs,
+                "MyGame",
+                &entries,
+                false
+            ),
             "{\"tool\":\"adf\",\"command\":\"info\",\"input\":\"d.adf\",\"filesystem\":\"ofs\",\"label\":\"MyGame\",\"bytes\":901120,\"entries\":[{\"name\":\"c\",\"kind\":\"dir\",\"size\":0},{\"name\":\"mygame\",\"kind\":\"file\",\"size\":51234}]}"
         );
     }
