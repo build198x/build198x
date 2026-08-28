@@ -37,6 +37,21 @@ changelog_update = true
 # publish. It therefore sits on build198x's own [[package]] block, which is the
 # only crate that needs it.
 
+[changelog]
+protect_breaking_commits = true
+commit_parsers = [
+  { message = '^chore(\([^)]*\))?: release\b', skip = true },
+  { message = '^(feat|fix|perf|revert)\((ci|release)\)', skip = true },
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Performance" },
+  { message = "^revert", group = "Reverted" },
+  { message = '^(chore|build)\(deps\)', group = "Dependencies" },
+  { message = "^(docs|test|chore|ci|build|refactor|style)", skip = true },
+  { message = "^Merge", skip = true },
+  { message = ".*", group = "Other" },
+]
+
 # Library crates ride the lockstep version and are not tagged, because they
 # exist only as dependencies of `build198x` and have nothing to release on
 # their own. That is now a preference rather than a requirement: with
