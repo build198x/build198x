@@ -9,10 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.4](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.3...build198x-adf-v0.2.4) - 2026-08-28
 
-### Other
+### Added
 
-- Ship installers and a Homebrew tap, like Asm198x has ([#31](https://github.com/build198x/build198x/pull/31))
-- correct a capacity figure that mixed two kinds of kilobyte ([#24](https://github.com/build198x/build198x/pull/24))
+- **Installers, and a Homebrew tap.** A release carried platform archives and
+  nothing to install them with: you had to find the right `.tar.xz`, check its
+  hash, unpack it and put the binary on `PATH` by hand. Shell and PowerShell
+  installers now ship alongside the archives, and a formula lands in
+  `build198x/homebrew-tap`
+  ([#31](https://github.com/build198x/build198x/pull/31)):
+
+  ```
+  brew install build198x/homebrew-tap/build198x-adf
+  ```
+
+  `build198x adf` remains the taught path; this is the leaner install when ADF
+  mastering is all you want. The tool itself is unchanged.
 
 ## [0.2.3](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.2...build198x-adf-v0.2.3) - 2026-08-27
 
