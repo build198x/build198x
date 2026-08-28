@@ -1,0 +1,112 @@
+name: Publish Homebrew formula
+
+# Commits this release's generated formula to build198x/homebrew-tap.
+#
+# Replaces dist's built-in `homebrew` publish job, which is identical except
+# for the push: it pushes once, and a rejected push fails the release. Since
+# #37 a version cuts two releases -- build198x-vX.Y.Z and
+# build198x-adf-vX.Y.Z -- release-plz pushes both tags together, and the two
+# runs reach the tap within seconds of each other. Whichever arrives second
+# checked the tap out before the first one's commit existed, so its push is
+# rejected as non-fast-forward and its formula never lands. v0.2.5 lost adf
+# that way and needed a manual re-run (#38).
+#
+# The fix is the loop below: rebase onto whatever the other run pushed and try
+# again. Everything else here is the generated job, kept deliberately close to
+# it so the two can be compared when dist changes.
+#
+# dist still writes the .rb -- that comes from `installers = [... "homebrew"]`
+# in Cargo.toml, which is untouched. Only the committing moved.
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        description: "The dist manifest for this release, passed by the release workflow"
+        required: true
+        type: string
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        required: true
+
+# No `permissions:` block on purpose. dist's generated caller gives a publish
+# job `id-token: write` and `packages: write` and nothing else, and a called
+# workflow that asks for a scope its caller was not granted is an error, not a
+# downgrade. Neither step here needs one: the tap checkout authenticates with
+# HOMEBREW_TAP_TOKEN, and same-run artifacts download on the runner's own
+# token rather than GITHUB_TOKEN.
+
+jobs:
+  publish:
+    name: Commit formula to the tap
+    runs-on: ubuntu-latest
+    env:
+      PLAN: ${{ inputs.plan }}
+      # The upstream job's identity, kept so the tap's history stays uniform
+      # across the formulae dist committed before this workflow existed.
+      GITHUB_USER: "axo bot"
+      GITHUB_EMAIL: "admin+bot@axo.dev"
+    steps:
+      - name: Check out the tap
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+          repository: "build198x/homebrew-tap"
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Fetch the formulae built by this release
+        uses: actions/download-artifact@v8
+        with:
+          pattern: artifacts-*
+          path: Formula/
+          merge-multiple: true
+
+      - name: Commit the formula files
+        run: |
+          set -euo pipefail
+
+          git config --global user.name "${GITHUB_USER}"
+          git config --global user.email "${GITHUB_EMAIL}"
+
+          committed=0
+
+          # A release's formula is whichever of its artifacts ends in .rb. The
+          # formula name need not match the app name, so the filename decides.
+          for release in $(jq --compact-output '.releases[] | select([.artifacts[] | endswith(".rb")] | any)' <<<"$PLAN"); do
+            filename=$(jq --raw-output '.artifacts[] | select(endswith(".rb"))' <<<"$release")
+            name="${filename%.rb}"
+            version=$(jq --raw-output .app_version <<<"$release")
+
+            export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+            brew update
+            # Leave author-supplied text alone; this is formatting, not review.
+            brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true
+
+            git add "Formula/${filename}"
+            git commit -m "${name} ${version}"
+            committed=1
+          done
+
+          if [ "$committed" = "0" ]; then
+            echo "This release builds no formula. Nothing to commit."
+            exit 0
+          fi
+
+          # The push the built-in job gets wrong. A sibling release run may have
+          # landed its own formula since the checkout above; rebase onto it and
+          # try again. Different files, so the rebase is a fast-forward in
+          # practice -- a conflict here means two runs wrote the same formula,
+          # which is not something to paper over, so the rebase is aborted and
+          # the job fails loudly.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "Pushed on attempt ${attempt}."
+              exit 0
+            fi
+            echo "Push rejected on attempt ${attempt}; rebasing onto the tap and retrying."
+            git pull --rebase --no-edit || { git rebase --abort || true; echo "Rebase failed -- two runs wrote the same formula."; exit 1; }
+            sleep $(( attempt * 5 ))
+          done
+
+          echo "Still could not push after 5 attempts."
+          exit 1

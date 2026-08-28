@@ -68,8 +68,13 @@ ci = "github"
 installers = ["shell", "powershell", "homebrew"]
 tap = "build198x/homebrew-tap"
 # Publishing the formula is a separate job from building the installer; without
-# it the tap is named and never written to.
-publish-jobs = ["homebrew"]
+# it the tap is named and never written to. This is our own job rather than
+# dist's built-in `homebrew`, which pushes to the tap exactly once and fails
+# the release when that push is rejected -- which it is, on every version,
+# because two release runs now reach the tap together (issue #38).
+# .github/workflows/publish-homebrew.yml is the built-in job plus a rebase and
+# retry around the push.
+publish-jobs = ["./publish-homebrew"]
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 pr-run-mode = "plan"
 # Restrict dist to tags that start with this. Without it, dist fires on *any*
