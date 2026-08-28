@@ -24,6 +24,9 @@ publish = false
 git_release_enable = false
 git_tag_enable = true
 changelog_update = true
+# Only reader-facing changes earn a release. Release-process work uses `ci:` or
+# `chore(release):`; changelog filtering alone does not prevent a version bump.
+release_commits = "^(feat|fix|perf|revert)[(:]"
 
 # git_only is NOT set here, deliberately. It takes the previous version from
 # the git tag rather than the crates.io registry, and is required whenever
