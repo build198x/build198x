@@ -9,6 +9,7 @@
 //! build198x-adf create <out.adf> [--add host=dest]... [--mkdir dir]... [flags]  # general volume builder
 //! build198x-adf verify <disk.adf>                                              # integrity check
 //! build198x-adf info   <disk.adf> [--recursive]                                # label, fs, contents
+//! build198x-adf manifest <disk.adf>                                             # canonical provenance JSON
 //! ```
 //!
 //! Output is human-readable by default; pass `--format json` on any verb for a
@@ -17,6 +18,7 @@
 //! `.adf` is written atomically (temp file, then rename).
 
 use format198x_commodore_amiga_adf::{Disk, Entry, EntryKind, FileSystem, Volume};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -39,8 +41,136 @@ fn run(args: &[String]) -> ExitCode {
         Some("create") => cmd_create(&args[1..]),
         Some("verify") => cmd_verify(&args[1..]),
         Some("info") => cmd_info(&args[1..]),
+        Some("manifest" | "inspect") => cmd_manifest(&args[1..]),
         _ => cmd_master(args),
     }
+}
+
+const ADF_MANIFEST_SCHEMA: &str = "build198x.adf.provenance.v1";
+const FORMAT198X_ADF_VERSION: &str = "0.3.2";
+
+fn cmd_manifest(args: &[String]) -> ExitCode {
+    let path = match single_disk_arg("manifest", args) {
+        Ok(path) => path,
+        Err(code) => return code,
+    };
+    let img = match read_bytes(&path) {
+        Ok(img) => img,
+        Err(code) => return code,
+    };
+    match manifest_json(&img) {
+        Ok(json) => {
+            println!("{json}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("build198x-adf: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn manifest_json(img: &[u8]) -> Result<String, String> {
+    let disk = Disk::open(img).map_err(|error| error.to_string())?;
+    let volume = disk
+        .volume_provenance()
+        .map_err(|error| error.to_string())?;
+    let geometry = disk.geometry();
+    let entries = recursive_entries(&disk)?;
+    let report = disk.check();
+    let hash = format!("{:x}", Sha256::digest(img));
+    let mut out = format!(
+        "{{\"schema\":\"{ADF_MANIFEST_SCHEMA}\",\"cli_version\":\"{}\",\"library\":{{\"name\":\"format198x-commodore-amiga-adf\",\"version\":\"{FORMAT198X_ADF_VERSION}\"}},\"disk\":{{\"sha256\":\"{hash}\",\"bytes\":{},\"geometry\":{{\"cylinders\":{},\"heads\":{},\"sectors_per_track\":{},\"blocks\":{}}},\"filesystem\":\"{}\",\"label\":\"{}\"}},\"boot\":{{\"checksum_valid\":{}}},\"root\":{{\"block\":{},\"bitmap_valid_flag\":{},\"bitmap_blocks\":{},\"bitmap_extension\":{}}},\"entries\":[",
+        env!("CARGO_PKG_VERSION"),
+        img.len(),
+        geometry.cylinders,
+        geometry.heads,
+        geometry.sectors_per_track,
+        geometry.blocks(),
+        disk.filesystem().name(),
+        json_escape(&disk.label()),
+        volume.boot_checksum_valid,
+        volume.root_block,
+        volume.bitmap_valid_flag,
+        json_u32_array(&volume.bitmap_blocks),
+        volume
+            .bitmap_extension
+            .map_or_else(|| "null".to_owned(), |block| block.to_string())
+    );
+    for (index, entry) in entries.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        let provenance = disk
+            .inspect(&entry.name)
+            .map_err(|error| error.to_string())?;
+        let component = provenance
+            .components
+            .last()
+            .ok_or_else(|| format!("{}: missing provenance", entry.name))?;
+        let kind = if entry.kind == EntryKind::File {
+            "file"
+        } else {
+            "dir"
+        };
+        out.push_str(&format!(
+            "{{\"path\":\"{}\",\"kind\":\"{kind}\",\"size\":{},\"resolution\":{{\"parent_block\":{},\"hash_bucket\":{},\"collision_hops\":{},\"header_block\":{},\"primary_type\":{},\"secondary_type\":{},\"stored_parent\":{},\"parent_valid\":{}}}",
+            json_escape(&entry.name), entry.size, component.parent_block, component.hash_bucket,
+            json_u32_array(&component.collision_hops), component.header_block, component.primary_type,
+            component.secondary_type, component.stored_parent, component.stored_parent == component.parent_block
+        ));
+        if let Some(file) = provenance.file {
+            let capacity = if disk.filesystem() == FileSystem::Ofs {
+                488u32
+            } else {
+                512u32
+            };
+            out.push_str(&format!(
+                ",\"file\":{{\"declared_size\":{},\"extension_blocks\":{},\"pointer_table_data\":{},\"logical_ranges\":[",
+                file.declared_size, json_u32_array(&file.extension_blocks), json_u32_array(&file.pointer_table_data)
+            ));
+            for (data_index, block) in file.pointer_table_data.iter().enumerate() {
+                if data_index > 0 {
+                    out.push(',');
+                }
+                let start = u32::try_from(data_index)
+                    .unwrap_or(u32::MAX)
+                    .saturating_mul(capacity);
+                let end = start.saturating_add(capacity).min(file.declared_size);
+                out.push_str(&format!(
+                    "{{\"block\":{block},\"start\":{start},\"end\":{end}}}"
+                ));
+            }
+            out.push_str("],\"ofs_linked_data\":[");
+            for (data_index, data) in file.ofs_data_chain.iter().enumerate() {
+                if data_index > 0 {
+                    out.push(',');
+                }
+                out.push_str(&format!(
+                    "{{\"block\":{},\"header_key\":{},\"sequence\":{},\"data_size\":{},\"next_data\":{},\"checksum_valid\":{}}}",
+                    data.block, data.header_key, data.sequence, data.data_size,
+                    data.next_data.map_or_else(|| "null".to_owned(), |block| block.to_string()), data.checksum_valid
+                ));
+            }
+            out.push_str("]}");
+        }
+        out.push('}');
+    }
+    out.push_str("],\"verification\":{");
+    out.push_str(&format!("\"sound\":{},\"problems\":[", report.is_sound()));
+    for (index, problem) in report.problems.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!("\"{}\"", json_escape(&problem.to_string())));
+    }
+    out.push_str("]}}");
+    Ok(out)
+}
+
+fn json_u32_array(values: &[u32]) -> String {
+    let values: Vec<String> = values.iter().map(u32::to_string).collect();
+    format!("[{}]", values.join(","))
 }
 
 /// The output format shared by every verb: human-readable text (default) or a
@@ -819,7 +949,8 @@ fn top_usage() -> String {
      \x20 build198x-adf master <exe> -o <out.adf> [flags]  master a hunk exe into a bootable disk\n\
      \x20 build198x-adf create <out.adf> [flags]           build a volume from files and dirs\n\
      \x20 build198x-adf verify <disk.adf>                  check an ADF's integrity\n\
-     \x20 build198x-adf info <disk.adf> [--recursive]       show label, filesystem, and contents\n\n\
+     \x20 build198x-adf info <disk.adf> [--recursive]       show label, filesystem, and contents\n\
+     \x20 build198x-adf manifest <disk.adf>                 emit canonical provenance JSON\n\n\
      Every verb takes --format text|json (default text). Run `<verb> --help`\n\
      for the verb's own options."
         .to_owned()
@@ -848,6 +979,12 @@ fn verb_usage(verb: &str) -> String {
         "info" => "build198x-adf info — show an ADF's label, filesystem, and contents\n\n\
              Usage:\n\
              \x20 build198x-adf info <disk.adf> [--recursive] [--format text|json]"
+            .to_owned(),
+        "manifest" => "build198x-adf manifest — emit canonical ADF provenance JSON\n\n\
+             USAGE:\n\
+             \x20 build198x-adf manifest <disk.adf>\n\n\
+             The output is schema-versioned, deterministic, and contains no host path or timestamp.\n\
+             `inspect` is an alias."
             .to_owned(),
         _ => usage(),
     }
@@ -1136,6 +1273,26 @@ mod tests {
             true,
         );
         assert!(json.contains("\"path\":\"Docs/Nested/large.bin\""));
+    }
+
+    #[test]
+    fn manifest_is_deterministic_complete_and_host_path_free() {
+        let mut volume = Volume::new("Evidence", FileSystem::Ofs);
+        volume
+            .add_file("Docs/large.bin", &vec![0x5a; 40_000])
+            .expect("valid file");
+        let image = volume.build().expect("volume fits");
+        let first = manifest_json(&image).expect("manifest");
+        let second = manifest_json(&image).expect("manifest");
+        assert_eq!(first, second);
+        assert!(first.starts_with("{\"schema\":\"build198x.adf.provenance.v1\""));
+        assert!(first.contains("\"sha256\":"));
+        assert!(first.contains("\"path\":\"Docs/large.bin\""));
+        assert!(first.contains("\"extension_blocks\":["));
+        assert!(first.contains("\"pointer_table_data\":["));
+        assert!(first.contains("\"ofs_linked_data\":["));
+        assert!(first.contains("\"sound\":true"));
+        assert!(!first.contains("tree.adf"));
     }
 
     #[test]
