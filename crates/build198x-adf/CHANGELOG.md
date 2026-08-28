@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.4...build198x-adf-v0.2.5) - 2026-08-28
+
+### Other
+
+- stop promising a build198x-adf formula that was never built ([#35](https://github.com/build198x/build198x/pull/35))
+
 ## [0.2.4](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.3...build198x-adf-v0.2.4) - 2026-08-28
 
 ### Other
