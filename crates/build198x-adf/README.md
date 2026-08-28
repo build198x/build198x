@@ -27,6 +27,8 @@ build198x-adf create game.adf --add mygame=c/mygame --startup mygame   # bootabl
 # check integrity (exit 0 sound, 1 corrupt) and inspect contents:
 build198x-adf verify mygame.adf
 build198x-adf info mygame.adf
+build198x-adf info --recursive mygame.adf  # complete tree, with full paths
+build198x-adf manifest mygame.adf > mygame.manifest.json
 ```
 
 Output is human-readable by default; pass `--format json` on any verb for a
@@ -40,7 +42,23 @@ single machine-readable line. Disks are written atomically.
 - **`create <out.adf>`** — assemble a volume from `--add host[=dest]` files and
   `--mkdir` directories; `--bootable` / `--startup <cmd>` for a boot disk.
 - **`verify <disk.adf>`** — deep checksum + structure check.
-- **`info <disk.adf>`** — label, filesystem, and root listing.
+- **`info <disk.adf>`** — label, filesystem, and root listing; add
+  `--recursive` for a deterministic complete-tree listing.
+- **`manifest <disk.adf>`** — canonical, schema-versioned provenance JSON;
+  `inspect` is an alias.
+
+## Provenance schema
+
+`build198x.adf.provenance.v1` is a byte-stable inspection contract. It records
+the disk SHA-256 and geometry, DOS and boot/root/bitmap metadata, the complete
+tree, path-resolution evidence, file pointer and OFS chain evidence, logical
+byte ranges, and the library's allocation/ownership verification report. It
+never records a host path, timestamp, or other ambient state.
+
+Compatible additions require a new schema identifier when they change stable
+field meaning or ordering. Arrays remain in AmigaDOS name order or their
+defined on-disk traversal order. Consumers must reject unknown schema IDs
+rather than silently applying v1 semantics.
 
 ## Notes
 
