@@ -57,17 +57,13 @@ ci = "github"
 # needs that repo to exist and a token with write access to it (the release
 # workflow reads `HOMEBREW_TAP_TOKEN`).
 #
-# Both binaries get one. `dist plan` produces build198x.rb and
-# build198x-adf.rb, with shell and powershell installers for each, which is
-# what release-plz.toml already describes: adf rides the single
-# build198x-vX.Y.Z tag rather than tagging on its own.
-#
-# Worth knowing when checking this: the v0.2.3 release carried no adf archives
-# at all, even though `dist plan` at that exact tag lists both packages. The
-# cause was not found. It is not the tag namespace -- build198x-v0.2.3,
-# v0.2.3 and build198x-adf-v0.2.3 all plan both. If the next release is
-# similarly missing adf, that is the thread to pull, and the formula will be
-# absent rather than wrong.
+# Only build198x gets one today. A release tag is `build198x-vX.Y.Z`, which is
+# dist's package-specific form `{package}-v{version}` -- and `build198x` is a
+# package -- so dist announces that package alone and drops the rest of the
+# workspace. `dist plan --tag=v0.2.4` plans both; `--tag=build198x-v0.2.4`
+# plans one. tag-namespace below is the same string as the crate name, so the
+# prefix and the package name cannot be told apart. See issue #34; until it is
+# settled, build198x-adf ships through crates.io only.
 installers = ["shell", "powershell", "homebrew"]
 tap = "build198x/homebrew-tap"
 # Publishing the formula is a separate job from building the installer; without

@@ -9,21 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.4](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.3...build198x-adf-v0.2.4) - 2026-08-28
 
-### Added
+### Other
 
-- **Installers, and a Homebrew tap.** A release carried platform archives and
-  nothing to install them with: you had to find the right `.tar.xz`, check its
-  hash, unpack it and put the binary on `PATH` by hand. Shell and PowerShell
-  installers now ship alongside the archives, and a formula lands in
-  `build198x/homebrew-tap`
-  ([#31](https://github.com/build198x/build198x/pull/31)):
+- **Version bump only.** The release that added installers and a Homebrew tap
+  ([#31](https://github.com/build198x/build198x/pull/31)) built `build198x`
+  alone: the `build198x-v0.2.4` tag names a package, so cargo-dist announced
+  that package and nothing else in the workspace
+  ([#34](https://github.com/build198x/build198x/issues/34)). This binary has no
+  archives and no formula in that release.
 
-  ```
-  brew install build198x/homebrew-tap/build198x-adf
-  ```
-
-  `build198x adf` remains the taught path; this is the leaner install when ADF
-  mastering is all you want. The tool itself is unchanged.
+  `cargo install build198x-adf` installs 0.2.4 as usual, and `build198x adf` —
+  the taught path — is in the `build198x` archives and formula.
 
 ## [0.2.3](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.2...build198x-adf-v0.2.3) - 2026-08-27
 
