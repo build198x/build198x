@@ -19,7 +19,7 @@ touches, and the first real consumer of the capability-spec layer" — and the
 wave-1 plan (`docs/plans/2026-06-11-001-feat-build198x-wave1-image-converter-plan.md`)
 opens the gate deliberately on that basis.
 
-Wave-1 scope: the `mediaspec` layer + image converter for the curriculum three
+Wave-1 scope: the `mediaspec198x` layer + image converter for the curriculum three
 (Spectrum, C64, Amiga OCS), with Atari ST as a fast-follow gated on its format
 documentation entering `reference/` with provenance (tracked as a follow-up
 issue, not silent).

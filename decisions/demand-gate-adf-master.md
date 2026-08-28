@@ -1,245 +1,128 @@
 # Decision: the ADF master — Amiga assembly's bootable-disk packaging books the media-mastering lane
 
-**Status:** Active — **built 2026-07-10** (`build198x adf` / `format::adf`) and
-wired into the Amiga-assembly capture path, retiring the last `commodore-amiga`
-Docker image. Bounded from-scratch (the Rust ADF-write crates stop short), no
-deps, deterministic. The placement follows the resolved tape/framing seam
-([`tape-framing-vs-mastering.md`](../../../decisions/tape-framing-vs-mastering.md)).
+**Status:** Active. Built 2026-07-10. The library now lives in Format198x as
+[`format198x-commodore-amiga-adf`](https://github.com/format198x/format198x);
+`build198x adf` and the standalone `build198x-adf` binary both consume it from
+crates.io.
 
-**Date:** 2026-07-09.
+**Date:** 2026-07-06. Built 2026-07-10.
 
 ## The decision
 
-Build198x masters the Amiga **bootable `.adf`**: a Kickstart-1.x hunk executable
-plus a boot block and an authored `startup-sequence` in, a bootable OFS disk
-image out — the shape a bare A500/KS1.3 boots straight into the game. This is
-the mastering half of the Amiga-assembly build; Asm198x owns the other half.
+Build198x masters the Amiga bootable `.adf`: a Kickstart-1.x hunk executable plus
+a boot block and an authored `startup-sequence` in, a bootable OFS disk image out
+— the shape a bare A500/KS1.3 boots straight into the game. This is the mastering
+half of the Amiga-assembly build; Asm198x owns the other half.
 
 Two halves, one seam:
 
-1. **Assemble** (`.asm` → KS1.x hunk-exe) → **Asm198x** (`--dialect vasm --exe`;
-   the curriculum's `-Fhunkexe` target).
+1. **Assemble** (`.asm` → KS1.x hunk-exe) → **Asm198x** (`--dialect vasm --exe`).
 2. **Master** (hunk-exe + boot block + `startup-sequence` → bootable `.adf`) →
-   **Build198x** (this record). Today `code-samples/_capture/capture.py`'s
-   `ensure_amiga_adf` does this with `xdftool` via the `commodore-amiga` Docker
-   image (create OFS + `boot install` + write `s/startup-sequence` + write the
-   exe); that image is the last build-image holdout of
-   [`code198x-dev-tooling-migration.md`](../../../decisions/code198x-dev-tooling-migration.md).
+   **Build198x** (this record).
 
 ## Why the seam falls here
 
 By the resolved framing/mastering rule
 ([`tape-framing-vs-mastering.md`](../../../decisions/tape-framing-vs-mastering.md)):
 a container whose content is the assembled program *and nothing else* is an
-Asm198x framing; the moment a second artifact joins, it is mastering. A
-bootable ADF is never just the program — it carries a boot block and an authored
+Asm198x framing; the moment a second artifact joins, it is mastering. A bootable
+ADF is never just the program — it carries a boot block and an authored
 `startup-sequence` that launches it, on an OFS filesystem. Program + loader +
 filesystem = mastering, the same shape as Gloaming's loader+SCREEN$+CODE tape
-([`demand-gate-tape-master.md`](demand-gate-tape-master.md), which already named
-"ADF/D64/DSK/TRD/MDR — each fires its own gate when real"). It passes the
+([`demand-gate-tape-master.md`](demand-gate-tape-master.md)). It passes the
 membership test: it converts build inputs into a machine-ready medium; it is not
 assembly, not emulation, not playback.
 
-## The concrete need (the gate)
+## The gate
 
-The Amiga-assembly capture pipeline masters ADFs *today* — exodus, flock,
-signal, meet-the-machine all boot from `ensure_amiga_adf`-built disks. The
-migration retires the `commodore-amiga` Docker image; that cannot complete while
-the mastering step still shells out to `xdftool` in that image. So the need is
-concrete and present, not speculative: a family-owned ADF master is what lets
-the last build image retire.
+The Amiga-assembly capture pipeline mastered ADFs with `xdftool` inside the
+`commodore-amiga` Docker image, the last build-image holdout of
+[`code198x-dev-tooling-migration.md`](../../../decisions/code198x-dev-tooling-migration.md).
+A family-owned ADF master is what let that image retire, so the need was present
+rather than speculative.
 
-**Assemble-half status (2026-07-09).** Asm198x `--exe` is byte-identical to vasm
-for exodus and signal, but the corpus gate is **not yet met** — flock units
-08–18 assemble 20 bytes shorter (an encoding differential), and
-`meet-the-machine/unit-16/blitter.asm` fails on an unsupported `!` expression
-operator. Both are logged as Asm198x compatibility bugs (see the migration
-record's log). The assemble cutover waits on those; this mastering record is
-independent of them.
+## What the library does
 
-## Scope fence
+A dependency-free (`core`/`std` only) read+write ADF library:
 
-In: OFS disk image creation, boot-block install (`boot1x`), `s/startup-sequence`
-authoring, writing + protecting the hunk-exe, KS1.x. Out (until their own gates
-fire): FFS, multi-file/multi-program disks, D64/DSK/TRD/MDR and other machines'
-disk formats, copy protection, custom bootblocks/trackloaders.
+- **Write.** A `Volume` builder — `add_file(path, bytes)`, `add_dir(path)`,
+  `set_bootable`, `build` — creating arbitrary nested trees at any depth with
+  auto-created intermediate directories and per-file protection. `master` and
+  `master_fs` are thin conveniences over it.
+- **Read.** `Disk::open` validates boot block and root; `filesystem`, `label`,
+  `list`, `read` for any path; `verify` checks every checksum — boot, root,
+  bitmap, headers, extension and OFS data blocks — plus structural sanity.
+- **OFS and FFS.** FFS (`DOS\1`) data blocks are raw 512-byte sectors navigated
+  entirely by the header/extension pointer tables; the volume structure is
+  identical to OFS.
 
-## Open questions for the build session
+## Constraints that bind
 
-- Reuse vs reimplement the `xdftool` OFS/bootblock maths — whether Build198x
-  wraps a vetted library or masters the disk bytes directly (parallels the
-  tape master's "container maths in, medium out").
-- The `startup-sequence` is authored plumbing (like the tape's BASIC loader):
-  does it stay a fixed template, or take parameters as the roster grows?
-- Ingest contract: raw hunk-exe + org/boot params in (no dependency on how the
-  exe was produced), matching the tape master's raw-binary ingest.
+**Deterministic output.** Dates are zeroed and images are byte-stable across
+runs. `xdftool` stamps creation dates, so its output is not reproducible; the
+committed `.adf` deliverables are.
 
-## Mastering scope (scoped 2026-07-10)
+**Panic-free on malformed input.** Every block pointer is range-checked and every
+chain loop-bounded, so a corrupt image yields `Error::Corrupt` rather than a
+crash.
 
-What the mastering step does today (xdftool, per unit): create an 880K DD image
-(1760×512 = 901120 bytes), format **OFS** with a volume name, install the
-standard **1.x boot block**, make an `s/` dir, write `s/startup-sequence` (one
-line: the exe name), write the exe with the **execute** protection bit. The
-disk boots on a bare A500/KS1.3 straight into the program.
+**Protection bits are `0x00`.** The RWED bits are **active-low**, so `0x0d`
+revokes read and the CLI cannot `LoadSeg` the file. KS1.3 never enforced it,
+which is why a wrong value can look cosmetic; KS2.04 reports `file is read
+protected`. `0x00` is a normal readable/executable file and makes OFS disks
+portable to KS2.0+ as well as KS1.3.
 
-**The OFS structures a writer must emit** (dissected from a built disk):
-- **Boot block** (sectors 0–1, 1024 B): `DOS\0` + the fixed 1.x boot code +
-  boot checksum. The boot code is a constant blob — embed it, don't author it.
-- **Root block** (sector 880): volume name, 72-slot hash table (top-level
-  entries), bitmap pointer(s), dates, block checksum.
-- **Bitmap block**: free/used sector map (one block suffices for DD).
-- **Dir header** (`s/`): like a file header, sec_type 2, its own 72-slot table.
-- **File headers** (`startup-sequence`, exe): name hashed into the parent's
-  table, size, protection bits (exe gets `e`), data-block list, checksum.
+**FFS floppies boot only on KS2.0+.** The 1.3 ROM's floppy filesystem is
+OFS-only, so the curriculum stays OFS; FFS is a general-tool capability.
+
+**Validation is functional, not a byte-compare.** The bar is that the mastered
+`.adf` boots in emu198x-amiga to the same verified screenshot. A structural
+read-back is a useful secondary check. A byte-compare against `xdftool` is
+meaningless because it stamps dates.
+
+**Ingest contract:** raw hunk-exe + volume name + the `startup-sequence`
+template, with no dependency on how the exe was produced — the same
+raw-binary-in shape as the tape master.
+
+**Correct for any input within the disk shape, not just the curriculum's.**
+Data-pointer overflow beyond a header's 72 slots chains into `T_LIST` extension
+blocks, and a program too large for an 880 KB disk is a typed error rather than a
+corrupt image. Directory inserts chain through `hash_chain` on a slot collision
+instead of clobbering, so any set of names is correct; header checksums are
+deferred until after all inserts, since an insert can set a header's
+`hash_chain`. The curriculum is the first consumer, not the bar — see
+[`../../../decisions/family-tools-are-general.md`](../../../decisions/family-tools-are-general.md).
+
+## The OFS structures a writer must emit
+
+Dissected from a known-good disk, cross-checked against ADFlib and gadf:
+
+- **Boot block** (sectors 0–1, 1024 B): `DOS\0` + the fixed 1.x boot code + boot
+  checksum. The boot code is a constant blob — embed it, don't author it.
+- **Root block** (sector 880): volume name, 72-slot hash table, bitmap
+  pointer(s), dates, block checksum.
+- **Bitmap block**: free/used sector map; one block suffices for DD.
+- **Dir header**: like a file header, sec_type 2, its own 72-slot table.
+- **File headers**: name hashed into the parent's table, size, protection bits,
+  data-block list, checksum.
 - **OFS data blocks**: 24-byte header (type/header-key/seq/data-size/next/
   checksum) + up to 488 B data, chained per file.
-Plus the AmigaDOS filename hash and the OFS block checksum — both small, fully
-specified algorithms.
 
-**Bounded scope** (the ca65-linker precedent): exactly one disk shape — bootable
-OFS DD, 1.x boot block, `s/startup-sequence` + one exe. Out: FFS, HD, multi-file
-or multi-disk sets, custom bootblocks/trackloaders (own gates when real).
+Plus the AmigaDOS filename hash and the OFS block checksum, both small and fully
+specified. An 880K DD image is 1760×512 = 901,120 bytes.
 
-**Rust landscape (evaluate before from-scratch).** `gadf` does precisely this
-job (executable → bootable OFS ADF, AmigaDOS 1.2+); `adflib` (vschwaberow) is a
-Rust read/**write** ADF library; `affs-read` is read-only; `fstool` builds
-Amiga OFS/FFS images. Path A: wrap/port one of these. Path B: a bounded
-from-scratch OFS writer (~a few hundred lines, no deps, format fully
-documented). Decide by maturity + determinism (below).
+## Why from scratch
 
-**Determinism is a requirement and an improvement.** xdftool stamps creation
-dates, so its `.adf` bytes aren't reproducible — a from-scratch writer (or a
-patched/ configured crate) can zero/fix the dates and emit **byte-stable**
-disks, making the committed `.adf` deliverables reproducible. Whichever path is
-chosen must produce deterministic output.
+The Rust ADF-write ecosystem stops short: `adflib`'s create is unimplemented,
+`fstool` is a heavy multi-format dependency, and `gadf` — which does precisely
+this job — is Go. A bounded from-scratch writer is a few hundred lines against a
+fully documented format, and it is the only path that guarantees determinism.
 
-**Validation:** not a byte-compare against xdftool (it stamps dates). The bar is
-functional — the mastered `.adf` boots in emu198x-amiga to the same verified
-screenshot (the migration trigger), confirmed 2026-07-10 for the *assemble*
-half. A structural read-back (adflib/xdftool) is a useful secondary check.
+## Out of scope
 
-**Ingest contract:** raw hunk-exe + volume name (+ the fixed `startup-sequence`
-template) → bootable `.adf`; no dependency on how the exe was produced — the
-same raw-binary-in shape as the tape master.
+The International and Dir-Cache variants, hard-disk (RDB) layouts, multi-disk
+sets, copy protection, and custom bootblocks or trackloaders. Each is its own
+later scope on the general-tool roadmap.
 
-## Built (2026-07-10)
-
-Path B (from-scratch) was chosen: the Rust ADF-write ecosystem stops short —
-adflib's create is unimplemented, fstool is a heavy multi-format dependency,
-gadf is Go. `format::adf` (dependency-free, `core`/`std` only) emits the boot
-block (constant KS1.2+ blob), root/bitmap/dir/file headers, OFS data-block
-chaining, the AmigaDOS name hash and block checksums; `build198x adf` is the
-CLI. Layout was taken as ground truth from a known-good disk, cross-checked
-against ADFlib and gadf. **Deterministic** — dates zeroed, byte-stable across
-runs (an improvement over xdftool). Verified: exodus (1 block) and flock
-unit-18 (26 KB / 55 blocks) master and boot to correct renders in
-emu198x-amiga; round-trip + checksum + determinism tests pass. Wired into
-`capture.py`'s `ensure_amiga_adf` — the Amiga-assembly build is now fully
-family-tooled (Asm198x + Build198x), Docker retired. Open scope questions
-(§ above) resolved by the build; the `startup-sequence` is a fixed `<name>\n`
-template, ingest is raw hunk-exe + name + volume.
-
-## Generalised beyond the curriculum shape (2026-07-10)
-
-The first build was bounded to the curriculum's inputs: one exe of ≤72 data
-blocks (~35 KB), and names assumed not to collide in the hash table. That is
-the wrong bar for a family tool — Asm198x, Build198x, and Emu198x are
-general tools that should be usable by anyone, with the curriculum merely the
-first consumer (see the umbrella principle
-[`../../../decisions/family-tools-are-general.md`](../../../decisions/family-tools-are-general.md)).
-So the writer was made correct for *any* input within the OFS-DD shape:
-
-- **Any file size.** Data-pointer overflow beyond a header's 72 slots chains
-  into `T_LIST` extension blocks. The old block ceiling became a disk-capacity
-  check: a program too large for an 880 KB disk is a typed error, not a
-  corrupt image.
-- **Any name set.** Directory inserts chain through the `hash_chain` field on a
-  slot collision instead of clobbering, so any set of names is correct. Header
-  checksums are deferred until after all inserts (an insert can set a header's
-  `hash_chain`).
-- **Protection bits** were left at the xdftool-copied `0x0d` here, documented as
-  "cosmetic under KS1.3" — **that was wrong, corrected 2026-07-10 below.**
-
-Verified by re-mastering + booting flock unit-18 and by unit tests for an
-extension-block file and a hash-collision insert.
-
-## Extracted, FFS added, protection bug fixed (2026-07-10)
-
-Three follow-on changes made the master a standalone, portable, general tool:
-
-1. **Extracted to its own crate** `format-commodore-amiga-adf` (dependency-free,
-   GPL-2.0-or-later) so it can be consumed on its own — Emu198x's floppy read
-   path in time, and crates.io once the read side lands. `build198x adf` and a
-   new standalone `build198x-adf` binary both delegate to it. See
-   [`module-and-crate-naming.md`](module-and-crate-naming.md) (amended: an
-   external audience is a split-triggering consumer) and
-   [`../../../decisions/family-tools-are-general.md`](../../../decisions/family-tools-are-general.md).
-
-2. **FFS (`DOS\1`) added** alongside OFS, selected by a `FileSystem` argument
-   (and `--ffs` on both CLIs). FFS data blocks are raw 512-byte sectors with no
-   per-block header/chain, navigated entirely by the header/extension pointer
-   tables; the volume structure is identical to OFS. **FFS floppies boot only on
-   KS2.0+** — the 1.3 ROM's floppy filesystem is OFS-only — so the curriculum
-   stays OFS; FFS is a general-tool capability for KS2.0+ users.
-
-3. **Protection-bit bug fixed: `0x0d` → `0x00`.** Booting an FFS disk on KS2.04
-   surfaced `flock: file is read protected` — the RWED bits are active-low, and
-   `0x0d` revokes read, so the CLI could not `LoadSeg` the command. KS1.3 never
-   enforced this, which is why the OFS disks "worked" and the value looked
-   cosmetic. `0x00` (a normal readable/executable file) fixes it and makes the
-   **OFS disks portable to KS2.0+ too**, not just KS1.3. Verified: flock unit-18
-   boots to its title as OFS on KS1.3, and as both OFS and FFS on KS2.04.
-
-## General multi-file/directory API (2026-07-10)
-
-The single-exe master was generalised into a `Volume` builder: `add_file(path,
-bytes)` / `add_dir(path)` create arbitrary nested trees (any depth,
-auto-created intermediate directories, per-file protection), `set_bootable`
-chooses a bootable vs data disk, and `build` emits the deterministic image.
-`master`/`master_fs` are now thin conveniences over it — verified **byte-
-identical** to the previous single-exe output, so nothing regressed. Empty
-files, duplicate/File-through-path errors (`Error::BadPath`), and non-bootable
-data disks are handled. Verified end-to-end: a two-directory disk (a command in
-`c/`, run from `s/startup-sequence`) boots to its title on KS1.3; unit tests
-cover nested trees, data disks, and empty files; an `examples/multi_file_disk`
-doubles as a crates.io example.
-
-## Read side (2026-07-10)
-
-Added `Disk`: `open` (validate the boot block + root), `filesystem`, `label`,
-`list`, `read` (any path, OFS or FFS), and `verify` (every checksum — boot,
-root, bitmap, headers, extension and OFS data blocks — plus structural sanity).
-It is **panic-free on malformed input**: every block pointer is range-checked
-and every chain is loop-bounded, so a corrupt image yields `Error::Corrupt`, not
-a crash. Round-trip tests assert `Disk::open(Volume::build())` reproduces every
-file for both filesystems. This makes the crate a genuine read+write ADF
-library — which Rust's `adflib` is not (its write is unimplemented) — and clears
-the last capability gate before the crates.io publish.
-
-What remains out — the International/Dir-Cache variants, hard-disk (RDB)
-layouts, and multi-disk sets — is the general-tool roadmap, each its own later
-scope.
-
-## crates.io: the family's first publish (2026-07-10)
-
-With read+write complete, `format-commodore-amiga-adf` becomes the **family's
-first crates.io crate** — the application of the licensing-split decision's
-"publish where there's a plausible consumer" (`Emu198x/.../crate-licensing-
-split.md`). The plausible consumers are real: any Rust Amiga tool or emulator
-(Rust's `adflib` can't write disks), and Emu198x's own floppy read path in time.
-Published **GPL-2.0-or-later**, per that decision (GPL all the way; the crate is
-clean-room from datasheets + a known-good disk, cross-checked against
-public-domain gadf, but the family stance is copyleft regardless).
-
-Publish-ready: `readme`, `keywords`, `categories`, a `//!`-documented API with
-doctests, and `examples/multi_file_disk`; `cargo publish --dry-run` passes; the
-name is free. This lands slightly ahead of the CPU crates the licensing record
-named as the first publishes — no conflict: that ordering was Emu198x-internal,
-and this is a different sibling's clean-room crate with a live consumer.
-
-**Mechanics.** The first publish is **manual and Steve's** (crates.io token +
-final go — outward-facing and irreversible): `cargo publish -p
-format-commodore-amiga-adf`. release-plz stays `publish = false` for now; whether
-to automate future publishes (needs `CARGO_REGISTRY_TOKEN` in CI) is a separate
-call. The `build198x-adf` binary can follow (`cargo install`) once the library
-is up, since it depends on it.
+D64, DSK, TRD, MDR and other machines' disk formats each fire their own gate when
+a real need appears.

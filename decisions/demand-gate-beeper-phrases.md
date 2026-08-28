@@ -59,7 +59,7 @@ Spectrum. Each fires its own gate when real.
   synthesise, emit. If it cannot audition a phrase for Steve's ear within a
   day or two of starting, it has grown past its demand: stop and re-read this
   fence.
-- **No audio capability layer.** `mediaspec` earned its existence with Emu198x
+- **No audio capability layer.** `mediaspec198x` earned its existence with Emu198x
   as a second consumer from day 1. An `audiospec` analogue waits for a second
   audio tool with a real shared-data need (likely the SID or AY gate); one
   square-wave phrase tool does not justify a spec layer.
