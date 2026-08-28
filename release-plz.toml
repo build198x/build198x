@@ -84,15 +84,34 @@ git_tag_enable = true
 git_release_enable = true
 
 # build198x-adf: the standalone ADF binary (a lean frontend over the library).
-# It has a binary, so cargo-dist builds it — but it rides the single
-# build198x-vX.Y.Z release tag rather than tagging on its own, so both binaries
-# land in one GitHub Release. Bumps in lockstep, never tags. It is also
-# published to crates.io (for `cargo install build198x-adf`) by release-plz
-# itself, the same way mediaspec198x is; build198x stays publish = false. Lockstep is intentional: build198x-adf's crates.io
-# version tracks the build198x tool suite it belongs to. (Independent versioning
-# was considered and rejected — it would re-create the cargo-dist/git_only
-# workarounds the ADF library was moved to format198x to escape.)
+# It has a binary, so cargo-dist builds it — from a tag of its own.
+#
+# It used to ride the CLI's build198x-vX.Y.Z tag, and that silently cost it
+# every release artifact it should have had. dist reads a tag as either bare
+# `vX.Y.Z`, meaning every dist-able package in the workspace, or
+# `{package}-vX.Y.Z`, meaning that package alone. `build198x` is a package, so
+# the CLI's tag is the second form and the rest of the workspace is dropped:
+# v0.2.3 and v0.2.4 both shipped without adf archives and without adf.rb. See
+# issue #34 for the measurements. A tag per package is what the grammar is
+# asking for, and the namespace glob already matches it, so no workflow changes.
+#
+# Two GitHub Releases per version is the price. Versions stay in lockstep —
+# every crate inherits [workspace.package].version — so this is independent
+# *tagging*, not the independent *versioning* that was considered and rejected
+# (that would re-create the cargo-dist/git_only workarounds the ADF library was
+# moved to format198x to escape).
+#
+# Both releases run the homebrew publish job, which commits to
+# build198x/homebrew-tap and pushes without rebasing. Two tags landing together
+# can therefore have the second push rejected as non-fast-forward. Re-running
+# that job takes a fresh checkout and succeeds; it cannot produce a wrong
+# formula, only a missing one.
+#
+# It is also published to crates.io (for `cargo install build198x-adf`) by
+# release-plz itself, the same way mediaspec198x is; build198x stays
+# publish = false. publish = true gives it a registry baseline too, so unlike
+# build198x it has no need of git_only.
 [[package]]
 name = "build198x-adf"
 publish = true
-git_tag_enable = false
+git_tag_enable = true
