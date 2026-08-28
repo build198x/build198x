@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4](https://github.com/build198x/build198x/compare/build198x-v0.2.3...build198x-v0.2.4) - 2026-08-28
+
+### Added
+
+- **Installers, and a Homebrew tap.** A release carried platform archives and
+  nothing to install them with: you had to find the right `.tar.xz`, check its
+  hash, unpack it and put the binary on `PATH` by hand. Shell and PowerShell
+  installers now ship alongside the archives, and a formula lands in
+  `build198x/homebrew-tap`
+  ([#31](https://github.com/build198x/build198x/pull/31)):
+
+  ```
+  brew install build198x/homebrew-tap/build198x
+  ```
+
+  The tool itself is unchanged — this release is how you get it, not what it
+  does.
+
+### Other
+
+- `mediaspec198x` now tags and cuts its own release, and the binary release run
+  answers only to `build198x-v*` tags
+  ([#30](https://github.com/build198x/build198x/pull/30)). Nothing changes for
+  this tool; a spec release can no longer start a CLI release.
+
 ## [0.2.3](https://github.com/build198x/build198x/compare/build198x-v0.2.2...build198x-v0.2.3) - 2026-08-27
 
 ### Fixed
