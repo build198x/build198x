@@ -221,6 +221,7 @@ fn cmd_master(args: &[String]) -> ExitCode {
     let mut out_path: Option<&String> = None;
     let mut volume: Option<String> = None;
     let mut name: Option<String> = None;
+    let mut protect = 0;
     let mut fs = FileSystem::Ofs;
 
     let mut i = 0;
@@ -251,6 +252,16 @@ fn cmd_master(args: &[String]) -> ExitCode {
                 match rest.get(i) {
                     Some(v) => name = Some(v.clone()),
                     None => return arg_error("--name needs a value"),
+                }
+            }
+            "--protect" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => match parse_protection(v) {
+                        Ok(bits) => protect = bits,
+                        Err(e) => return arg_error(&e),
+                    },
+                    None => return arg_error("--protect needs RWED letters"),
                 }
             }
             other if other.starts_with('-') => {
@@ -294,7 +305,7 @@ fn cmd_master(args: &[String]) -> ExitCode {
         }
     });
 
-    let img = match format198x_commodore_amiga_adf::master_fs(&exe, &name, &volume, fs) {
+    let img = match assemble_master(&exe, &name, &volume, fs, protect) {
         Ok(img) => img,
         Err(e) => {
             eprintln!("build198x-adf: {e}");
@@ -313,6 +324,20 @@ fn cmd_master(args: &[String]) -> ExitCode {
     };
     println!("{line}");
     ExitCode::SUCCESS
+}
+
+fn assemble_master(
+    exe: &[u8],
+    name: &str,
+    label: &str,
+    fs: FileSystem,
+    protect: u32,
+) -> Result<Vec<u8>, format198x_commodore_amiga_adf::Error> {
+    let mut volume = Volume::new(label, fs);
+    volume.add_file("s/startup-sequence", format!("{name}\n").as_bytes())?;
+    volume.add_file_with_protection(name, exe, protect)?;
+    volume.set_bootable(true);
+    volume.build()
 }
 
 fn master_text(
@@ -647,6 +672,7 @@ fn cmd_create(args: &[String]) -> ExitCode {
     let mut out_path: Option<String> = None;
     let mut label: Option<String> = None;
     let mut adds: Vec<(String, String)> = Vec::new();
+    let mut protections: Vec<(String, u32)> = Vec::new();
     let mut mkdirs: Vec<String> = Vec::new();
     let mut bootable = false;
     let mut startup: Option<String> = None;
@@ -693,6 +719,21 @@ fn cmd_create(args: &[String]) -> ExitCode {
                     None => return verb_arg_error("create", "--add needs a host file"),
                 }
             }
+            "--protect-file" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => match parse_file_protection(v) {
+                        Ok(rule) => protections.push(rule),
+                        Err(e) => return verb_arg_error("create", &e),
+                    },
+                    None => {
+                        return verb_arg_error(
+                            "create",
+                            "--protect-file needs <dest>=<RWED letters>",
+                        );
+                    }
+                }
+            }
             other if other.starts_with('-') => {
                 return verb_arg_error("create", &format!("unknown flag `{other}`"));
             }
@@ -710,11 +751,22 @@ fn cmd_create(args: &[String]) -> ExitCode {
         return verb_arg_error("create", "no output path given (<out.adf>)");
     };
     let label = label.unwrap_or_else(|| default_label(&out_path));
+    if let Err(e) = validate_protections(&adds, &protections) {
+        return verb_arg_error("create", &e);
+    }
     if startup.is_some() {
         bootable = true; // a startup-sequence only runs on a bootable disk
     }
 
-    let img = match build_volume(&label, fs, bootable, &mkdirs, &adds, startup.as_deref()) {
+    let img = match build_volume(
+        &label,
+        fs,
+        bootable,
+        &mkdirs,
+        &adds,
+        &protections,
+        startup.as_deref(),
+    ) {
         Ok(img) => img,
         Err(code) => return code,
     };
@@ -764,6 +816,59 @@ fn parse_add(spec: &str) -> Result<(String, String), String> {
     }
 }
 
+/// Parse the permissions a file should have. AmigaDOS stores RWED active-low,
+/// so omitted letters become set bits in the on-disk protection word.
+fn parse_protection(spec: &str) -> Result<u32, String> {
+    let mut granted = 0u32;
+    for letter in spec.chars() {
+        let bit = match letter.to_ascii_lowercase() {
+            'r' => 3,
+            'w' => 2,
+            'e' => 1,
+            'd' => 0,
+            other => return Err(format!("invalid protection letter `{other}` (use rwed)")),
+        };
+        let mask = 1 << bit;
+        if granted & mask != 0 {
+            return Err(format!("duplicate protection letter `{letter}`"));
+        }
+        granted |= mask;
+    }
+    Ok(!granted & 0x0f)
+}
+
+fn parse_file_protection(spec: &str) -> Result<(String, u32), String> {
+    let Some((path, letters)) = spec.split_once('=') else {
+        return Err(format!(
+            "--protect-file {spec}: expected <dest>=<RWED letters>"
+        ));
+    };
+    if path.is_empty() {
+        return Err(format!("--protect-file {spec}: empty destination"));
+    }
+    Ok((path.to_owned(), parse_protection(letters)?))
+}
+
+fn validate_protections(
+    adds: &[(String, String)],
+    protections: &[(String, u32)],
+) -> Result<(), String> {
+    for (index, (path, _)) in protections.iter().enumerate() {
+        if protections[..index]
+            .iter()
+            .any(|(previous, _)| previous == path)
+        {
+            return Err(format!("protection for `{path}` was given more than once"));
+        }
+        if !adds.iter().any(|(_, dest)| dest == path) {
+            return Err(format!(
+                "--protect-file names `{path}`, but no --add writes that destination"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The final path component of a host path, honouring the host OS separators.
 fn host_basename(host: &str) -> String {
     Path::new(host)
@@ -795,6 +900,7 @@ fn build_volume(
     bootable: bool,
     mkdirs: &[String],
     adds: &[(String, String)],
+    protections: &[(String, u32)],
     startup: Option<&str>,
 ) -> Result<Vec<u8>, ExitCode> {
     let mut files = Vec::with_capacity(adds.len());
@@ -807,7 +913,7 @@ fn build_volume(
             }
         }
     }
-    match assemble_volume(label, fs, bootable, mkdirs, &files, startup) {
+    match assemble_volume(label, fs, bootable, mkdirs, &files, protections, startup) {
         Ok(img) => Ok(img),
         Err(e) => {
             eprintln!("build198x-adf: {e}");
@@ -825,6 +931,7 @@ fn assemble_volume(
     bootable: bool,
     mkdirs: &[String],
     files: &[(String, Vec<u8>)],
+    protections: &[(String, u32)],
     startup: Option<&str>,
 ) -> Result<Vec<u8>, format198x_commodore_amiga_adf::Error> {
     let mut vol = Volume::new(label, fs);
@@ -833,7 +940,12 @@ fn assemble_volume(
         vol.add_dir(d)?;
     }
     for (dest, bytes) in files {
-        vol.add_file(dest, bytes)?;
+        let protect = protections
+            .iter()
+            .rev()
+            .find_map(|(path, bits)| (path == dest).then_some(*bits))
+            .unwrap_or(0);
+        vol.add_file_with_protection(dest, bytes, protect)?;
     }
     if let Some(cmd) = startup {
         vol.add_file("s/startup-sequence", format!("{cmd}\n").as_bytes())?;
@@ -965,6 +1077,7 @@ fn verb_usage(verb: &str) -> String {
              \x20     --label <name>     volume label (default: capitalised output stem)\n\
              \x20     --add <host>[=<dest>]  add a host file at <dest> (repeatable;\n\
              \x20                       dest defaults to the basename; a trailing / keeps it)\n\
+             \x20     --protect-file <dest>=<rwed>  set one added file's permissions\n\
              \x20     --mkdir <dest>    create an empty directory (repeatable)\n\
              \x20     --bootable        write a boot block (default: not bootable)\n\
              \x20     --startup <cmd>   write s/startup-sequence running <cmd> (implies --bootable)\n\
@@ -1001,6 +1114,7 @@ fn usage() -> String {
      \x20     --volume <label>  disk volume label (default: capitalised name)\n\
      \x20     --name <file>     on-disk file + startup-sequence command\n\
      \x20                       (default: the executable's basename)\n\
+     \x20     --protect <rwed>  executable permissions (default: rwed)\n\
      \x20     --ofs | --ffs     filesystem (default: --ofs; --ffs needs KS2.0+)\n\
      \x20     --format <fmt>    output format: text (default) or json\n\
      \x20 -h, --help            show this help"
@@ -1104,6 +1218,7 @@ mod tests {
                 ("mygame".to_owned(), vec![0u8; 1024]),
                 ("readme".to_owned(), b"hi".to_vec()),
             ],
+            &[],
             Some("mygame"),
         )
         .unwrap();
@@ -1119,7 +1234,7 @@ mod tests {
 
     #[test]
     fn assemble_empty_disk_is_valid() {
-        let img = assemble_volume("Blank", FileSystem::Ofs, false, &[], &[], None).unwrap();
+        let img = assemble_volume("Blank", FileSystem::Ofs, false, &[], &[], &[], None).unwrap();
         let disk = Disk::open(&img).unwrap();
         disk.verify().unwrap();
         assert_eq!(disk.label(), "Blank");
@@ -1135,11 +1250,70 @@ mod tests {
                 false,
                 &["c".to_owned()],
                 &[("x".to_owned(), vec![1, 2, 3])],
+                &[],
                 None,
             )
             .unwrap()
         };
         assert_eq!(build(), build());
+    }
+
+    #[test]
+    fn protection_letters_are_encoded_active_low() {
+        assert_eq!(parse_protection("rwed").unwrap(), 0x00);
+        assert_eq!(parse_protection("e").unwrap(), 0x0d);
+        assert_eq!(parse_protection("").unwrap(), 0x0f);
+        assert!(parse_protection("x").is_err());
+        assert!(parse_protection("rr").is_err());
+    }
+
+    #[test]
+    fn file_protection_must_name_one_added_destination_once() {
+        let adds = vec![("host".to_owned(), "c/program".to_owned())];
+        assert!(validate_protections(&adds, &[("c/program".to_owned(), 0)]).is_ok());
+        assert!(validate_protections(&adds, &[("program".to_owned(), 0)]).is_err());
+        assert!(
+            validate_protections(
+                &adds,
+                &[("c/program".to_owned(), 0), ("c/program".to_owned(), 1)]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn default_master_remains_byte_identical_to_the_library_helper() {
+        let expected =
+            format198x_commodore_amiga_adf::master_fs(b"hunk", "program", "Disk", FileSystem::Ofs)
+                .unwrap();
+        assert_eq!(
+            assemble_master(b"hunk", "program", "Disk", FileSystem::Ofs, 0).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn assemble_writes_requested_file_protection() {
+        let img = assemble_volume(
+            "Protected",
+            FileSystem::Ofs,
+            false,
+            &[],
+            &[("program".to_owned(), b"code".to_vec())],
+            &[("program".to_owned(), parse_protection("e").unwrap())],
+            None,
+        )
+        .unwrap();
+        let evidence = Disk::open(&img).unwrap().inspect("program").unwrap();
+        let header = evidence.components.last().unwrap().header_block as usize;
+        assert_eq!(
+            u32::from_be_bytes(
+                img[header * 512 + 320..header * 512 + 324]
+                    .try_into()
+                    .unwrap()
+            ),
+            0x0d
+        );
     }
 
     #[test]
