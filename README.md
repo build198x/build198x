@@ -7,6 +7,8 @@ One binary, one subcommand per tool:
 ```
 build198x image  <input.png> --machine <id> --format <f>   # images → native screen formats
 build198x beeper <input.bpr> [--repeat <n>]                # phrase notation → audition WAV + Spectrum beeper asm
+build198x adf    create <out.adf> [flags]                  # files + directories → Amiga OFS/FFS volume
+build198x adf    <program> -o <out.adf>                    # hunk executable → bootable Amiga disk
 ```
 
 ## The tools
@@ -15,13 +17,29 @@ build198x beeper <input.bpr> [--repeat <n>]                # phrase notation →
 
 **`beeper`** — turns a textual phrase notation (notes, durations, rests) into two renderings of one timing model: a square-wave WAV for fast audition by ear, and the phrase as ZX Spectrum assembly in the table-free `beep`/`rest` idiom the Code198x curriculum teaches. Calibrated by regenerating Gloaming's hand-authored phrase constants exactly. First consumer: Gloaming's audio pass. The tool emits phrases, never the playback routines — those stay hand-written curriculum content.
 
-Each tool opened on a named concrete need (the demand gate): see [`decisions/demand-gate-opening.md`](decisions/demand-gate-opening.md) and [`decisions/demand-gate-beeper-phrases.md`](decisions/demand-gate-beeper-phrases.md).
+**`adf`** — creates, masters, verifies, and inspects Commodore Amiga ADF floppy images. `master` (and the shorthand form shown above) packages one hunk executable into a bootable disk; `create` authors a general OFS or FFS volume from files and directories. `verify` performs a deep structural and checksum check, while `info` reports the filesystem and directory contents. The command delegates the disk layout to the standalone [`format198x-commodore-amiga-adf`](https://crates.io/crates/format198x-commodore-amiga-adf) library owned by Format198x; Build198x owns the mastering workflow and CLI.
+
+Each tool opened on a named concrete need (the demand gate): see [`decisions/demand-gate-opening.md`](decisions/demand-gate-opening.md), [`decisions/demand-gate-beeper-phrases.md`](decisions/demand-gate-beeper-phrases.md), and the completed [`decisions/demand-gate-adf-master.md`](decisions/demand-gate-adf-master.md).
 
 A third lane is pending a boundary decision: the Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE). Its demand gate is recorded in [`decisions/demand-gate-tape-master.md`](decisions/demand-gate-tape-master.md); implementation waits until the Build198x/Asm198x ownership call is settled.
 
 ## Install
 
-Prebuilt binaries for each release are on the [Releases page](https://github.com/build198x/build198x/releases) (built by cargo-dist). Nothing here is published to crates.io — the binary is the product.
+Prebuilt binaries for each release are on the [Releases page](https://github.com/build198x/build198x/releases) (built by cargo-dist). The full `build198x` binary is distributed there. The lean ADF-only binary is also published to crates.io:
+
+```sh
+cargo install build198x-adf
+```
+
+Its command surface mirrors `build198x adf` and adds a `manifest` verb for canonical provenance JSON:
+
+```sh
+build198x-adf mygame -o mygame.adf
+build198x-adf create data.adf --label Data --add readme.txt --mkdir docs
+build198x-adf verify data.adf
+build198x-adf info --recursive data.adf
+build198x-adf manifest data.adf
+```
 
 ## The roster and the gate
 
