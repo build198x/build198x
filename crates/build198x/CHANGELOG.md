@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7](https://github.com/build198x/build198x/compare/build198x-v0.2.6...build198x-v0.2.7) - 2026-08-29
+
+### Added
+
+- *(adf)* expose file protection bits
+
 ## [0.2.6](https://github.com/build198x/build198x/compare/build198x-v0.2.5...build198x-v0.2.6) - 2026-08-28
 
 ### Added
