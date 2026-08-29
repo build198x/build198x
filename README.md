@@ -35,7 +35,9 @@ Its command surface mirrors `build198x adf` and adds a `manifest` verb for canon
 
 ```sh
 build198x-adf mygame -o mygame.adf
+build198x-adf mygame -o mygame.adf --protect e
 build198x-adf create data.adf --label Data --add readme.txt --mkdir docs
+build198x-adf create game.adf --add mygame=c/mygame --protect-file c/mygame=e
 build198x-adf verify data.adf
 build198x-adf info --recursive data.adf
 build198x-adf manifest data.adf

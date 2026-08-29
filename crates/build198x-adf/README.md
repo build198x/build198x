@@ -18,11 +18,13 @@ cargo install build198x-adf
 ```sh
 # master a hunk executable into a bootable disk (OFS boots on a bare A500/KS1.3):
 build198x-adf mygame -o mygame.adf
+build198x-adf mygame -o mygame.adf --protect e   # execute-only, matching `protect +e`
 build198x-adf mygame -o mygame.adf --ffs      # FFS: denser, needs Kickstart 2.0+
 
 # build an arbitrary volume — files, directories, bootable or not:
 build198x-adf create data.adf --label Data --add readme.txt --add logo.iff=art/logo.iff --mkdir docs
 build198x-adf create game.adf --add mygame=c/mygame --startup mygame   # bootable
+build198x-adf create game.adf --add mygame=c/mygame --protect-file c/mygame=e
 
 # check integrity (exit 0 sound, 1 corrupt) and inspect contents:
 build198x-adf verify mygame.adf
@@ -41,6 +43,9 @@ single machine-readable line. Disks are written atomically.
   `build198x-adf <exe> -o <out.adf>` is shorthand for this.
 - **`create <out.adf>`** — assemble a volume from `--add host[=dest]` files and
   `--mkdir` directories; `--bootable` / `--startup <cmd>` for a boot disk.
+- **Protection bits** — `master --protect <rwed>` sets the program permissions;
+  `create --protect-file <dest>=<rwed>` sets an added file's permissions. The
+  default is `rwed`; `e` matches the AmigaDOS command `protect <file> +e`.
 - **`verify <disk.adf>`** — deep checksum + structure check.
 - **`info <disk.adf>`** — label, filesystem, and root listing; add
   `--recursive` for a deterministic complete-tree listing.
