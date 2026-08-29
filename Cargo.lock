@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "build198x"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "format198x-commodore-amiga-adf",
  "format198x-commodore-amiga-ilbm",
@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "build198x-adf"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "format198x-commodore-amiga-adf",
  "sha2",
