@@ -133,15 +133,15 @@ dependencies = [
 
 [[package]]
 name = "format198x-commodore-amiga-adf"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7255f3ee4fc781ad4706d5f724dabe3d905e08f53be23e713484c98897e01731"
+checksum = "2ed288a79912b3af0eafa304afb2ff2ac27668ba88efcce03ef2a1b3ae9c0bca"
 
 [[package]]
 name = "format198x-commodore-amiga-ilbm"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45cdd65f89ae0464febcfd7d591791039b10b44cb9cc23e0b140b90ae0d748f9"
+checksum = "e689ce92d88dfae3a08a054e1fc0e6915133491dacb6a0c6236c5b9d3b3f60ca"
 
 [[package]]
 name = "format198x-commodore-c64-art-studio"
