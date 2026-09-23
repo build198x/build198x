@@ -1,6 +1,6 @@
 //! Sinclair ZX Spectrum graphics capabilities.
 //!
-//! Authored from `syntheses/zx-spectrum/screen-and-attribute-memory.md`
+//! Authored from `syntheses/sinclair-zx-spectrum/screen-and-attribute-memory.md`
 //! (whose silicon canon is Chris Smith, *The ZX Spectrum ULA*, Chs 12 + 15):
 //!
 //! - Paper bitmap is 256×192 pixels, 1 bit per pixel (§ 1).
@@ -65,7 +65,7 @@ pub const MACHINE: MachineGraphics = MachineGraphics {
     modes: &[ScreenMode {
         name: "standard",
         // 256×192 paper, 32×24 cells of 8×8:
-        // syntheses/zx-spectrum/screen-and-attribute-memory.md §§ 1, 6.
+        // syntheses/sinclair-zx-spectrum/screen-and-attribute-memory.md §§ 1, 6.
         paper_width: 256,
         paper_height: 192,
         // The Spectrum has a single pixel shape (no double-wide mode), so
@@ -93,5 +93,5 @@ pub const MACHINE: MachineGraphics = MachineGraphics {
     default_interpretation: Some("emu198x-v1"),
     notes: "FLASH (attribute bit 7) exists but is out of converter scope; \
             converted images ship FLASH=0. Source: \
-            syntheses/zx-spectrum/screen-and-attribute-memory.md \u{a7} 7.",
+            syntheses/sinclair-zx-spectrum/screen-and-attribute-memory.md \u{a7} 7.",
 };

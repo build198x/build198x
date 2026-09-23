@@ -12,7 +12,7 @@
 use mediaspec198x::{ConstraintRule, PaletteModel, Ratio, Rgb, machine, rgb};
 
 /// Spectrum paper is 256×192 with 32×24 cells of 8×8
-/// (`syntheses/zx-spectrum/screen-and-attribute-memory.md` §§ 1, 6).
+/// (`syntheses/sinclair-zx-spectrum/screen-and-attribute-memory.md` §§ 1, 6).
 #[test]
 fn spectrum_standard_mode_geometry() {
     let m = machine("sinclair-zx-spectrum").expect("machine");

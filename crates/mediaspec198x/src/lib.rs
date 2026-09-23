@@ -13,7 +13,7 @@
 //! decision at `198x/decisions/shared-media-spec.md`.
 //!
 //! Source citations in this crate are file paths relative to the `198x/`
-//! umbrella root (e.g. `syntheses/zx-spectrum/screen-and-attribute-memory.md`).
+//! umbrella root (e.g. `syntheses/sinclair-zx-spectrum/screen-and-attribute-memory.md`).
 //!
 //! Palette interpretation names are **content-versioned and frozen**: a
 //! published name (`emu198x-v1`, `pepto-v1`) never changes its values. A
@@ -175,7 +175,7 @@ pub enum ConstraintRule {
     /// selected by the cell's BRIGHT bit — BRIGHT applies to ink and paper
     /// together, never separately. Black is shared across the two halves
     /// (the bright bit has no effect when no primaries are active).
-    /// Source: `syntheses/zx-spectrum/screen-and-attribute-memory.md` § 7
+    /// Source: `syntheses/sinclair-zx-spectrum/screen-and-attribute-memory.md` § 7
     /// (attribute byte format; "Why BRIGHT applies to both INK and PAPER").
     SpectrumAttr,
     /// C64 standard ("hires") bitmap rule: per 8×8 cell, two freely chosen
