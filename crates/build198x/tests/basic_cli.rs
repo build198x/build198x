@@ -267,3 +267,145 @@ fn non_ascii_names_become_question_marks_in_the_header() {
     let blocks = decode(&tap).expect("decode tap");
     assert_eq!(&blocks[0].data[1..11], b"caf?-menu-");
 }
+
+#[test]
+fn lint_reports_findings_as_path_line_column_rule() {
+    let dir = TempDir::new("lint");
+    std::fs::write(dir.path().join("a.bas"), "  10 LET n = 1\n").expect("write listing");
+    let (code, out, err) = run_in(
+        dir.path(),
+        &[
+            "basic",
+            "lint",
+            "a.bas",
+            "--machine",
+            "sinclair-zx-spectrum",
+        ],
+    );
+    assert_eq!(code, 1, "{err}");
+    assert_eq!(
+        out,
+        "a.bas:1:11: stored-space: a space here is stored and listed; the Spectrum's own display spacing needs none\n\
+         a.bas:1:13: stored-space: a space here is stored and listed; the Spectrum's own display spacing needs none\n"
+    );
+}
+
+#[test]
+fn lint_fix_rewrites_then_reports_what_remains() {
+    let dir = TempDir::new("lintfix");
+    std::fs::write(
+        dir.path().join("a.bas"),
+        "10 LET name$ = \"x\"\n20 PRINT name$\n",
+    )
+    .expect("write listing");
+    let (code, out, err) = run_in(
+        dir.path(),
+        &[
+            "basic",
+            "lint",
+            "a.bas",
+            "--machine",
+            "sinclair-zx-spectrum",
+            "--fix",
+        ],
+    );
+    assert_eq!(code, 1, "{err}");
+    let fixed = std::fs::read_to_string(dir.path().join("a.bas")).expect("read listing");
+    assert_eq!(fixed, "  10 LET name$=\"x\"\n  20 PRINT name$\n");
+    // Only the rule --fix cannot mend is left.
+    assert!(out.contains("a.bas:1:10: string-var-name:"), "{out}");
+    assert!(!out.contains("stored-space"), "{out}");
+    assert!(!out.contains("listing-form"), "{out}");
+}
+
+#[test]
+fn lint_fix_leaves_a_canonical_file_untouched() {
+    let dir = TempDir::new("lintclean");
+    let path = dir.path().join("a.bas");
+    let canonical = "  10 PRINT \"HELLO\"\n  20 GO TO 10\n";
+    std::fs::write(&path, canonical).expect("write listing");
+    let before = std::fs::metadata(&path)
+        .and_then(|m| m.modified())
+        .expect("mtime");
+    // Make any rewrite visible in the modified time, whatever the filesystem's
+    // timestamp resolution.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let (code, out, err) = run_in(
+        dir.path(),
+        &[
+            "basic",
+            "lint",
+            "a.bas",
+            "--machine",
+            "sinclair-zx-spectrum",
+            "--fix",
+        ],
+    );
+    assert_eq!(code, 0, "{out}{err}");
+    assert_eq!(out, "");
+    let after = std::fs::metadata(&path)
+        .and_then(|m| m.modified())
+        .expect("mtime");
+    assert_eq!(before, after);
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("read listing"),
+        canonical
+    );
+}
+
+#[test]
+fn lint_json_lists_every_finding() {
+    let dir = TempDir::new("lintjson");
+    std::fs::write(dir.path().join("a.bas"), "10 SCORE=1\n").expect("write listing");
+    let (code, out, err) = run_in(
+        dir.path(),
+        &[
+            "basic",
+            "lint",
+            "a.bas",
+            "--machine",
+            "commodore-c64",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(code, 1, "{err}");
+    assert!(out.starts_with("{\"tool_version\":"), "{out}");
+    assert!(out.contains("\"machine\":\"commodore-c64\""), "{out}");
+    assert!(
+        out.contains("{\"path\":\"a.bas\",\"line\":1,\"column\":4,\"rule\":\"keyword-in-name\","),
+        "{out}"
+    );
+}
+
+#[test]
+fn lint_usage_errors_exit_2() {
+    let dir = TempDir::new("lintusage");
+    let (code, _, _) = run_in(dir.path(), &["basic", "lint", "--machine", "commodore-c64"]);
+    assert_eq!(code, 2);
+    let (code, _, _) = run_in(dir.path(), &["basic", "lint", "a.bas"]);
+    assert_eq!(code, 2);
+}
+
+#[test]
+fn build_refuses_a_listing_that_fails_lint() {
+    let dir = TempDir::new("buildlint");
+    std::fs::write(dir.path().join("a.bas"), "10 PRINT CHR$(147)\n").expect("write listing");
+    let (code, _, err) = run_in(
+        dir.path(),
+        &[
+            "basic",
+            "a.bas",
+            "--machine",
+            "sinclair-zx-spectrum",
+            "-o",
+            "a.tap",
+        ],
+    );
+    assert_eq!(code, 1);
+    assert!(
+        err.contains("a.bas:1:1: listing-form: LIST shows `  10 PRINT CHR$ (147)`"),
+        "{err}"
+    );
+    assert!(!dir.path().join("a.tap").exists());
+}

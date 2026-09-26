@@ -9,6 +9,8 @@
 //! the dialect and the container for a machine. [`Machine`] is the one list
 //! a new machine is added to.
 
+pub mod lint;
+
 use format198x_sinclair_zx_spectrum_tap::{Header, HeaderKind, TapBlock, encode};
 
 /// The auto-start line the Spectrum ROM reads as "do not run": any value of
