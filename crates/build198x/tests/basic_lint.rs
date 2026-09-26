@@ -94,46 +94,34 @@ fn keyword_named_variables_are_flagged() {
     assert!(rules(ZX, "  10 LET inky=2\n").is_empty());
 }
 
+/// Each row of the ROM capture: whether RUN stopped with report C, and the
+/// line. See tests/fixtures/rom-statement-keyword/README.md.
+fn rom_statement_cases() -> Vec<(bool, &'static str)> {
+    include_str!("fixtures/rom-statement-keyword/results.tsv")
+        .lines()
+        .filter(|row| !row.starts_with('#'))
+        .map(|row| {
+            let cols: Vec<&str> = row.split('\t').collect();
+            assert_eq!(cols.len(), 3, "{row}");
+            let (editor, run, source) = (cols[0], cols[1], cols[2]);
+            let nonsense = run.starts_with("C Nonsense in BASIC");
+            // The editor refuses only what RUN also stops on.
+            assert!(editor == "accepted" || nonsense, "{row}");
+            (nonsense, source)
+        })
+        .collect()
+}
+
 #[test]
-fn statements_must_start_with_a_command_keyword() {
-    // Every listing flagged here was refused by the genuine 48K ROM's editor
-    // (EDIT, then ENTER, on bytes from this tokeniser) and stopped with
-    // C Nonsense in BASIC when run from a tape.
-    for src in [
-        "  10GOTO 10\n",
-        "  10x=1\n",
-        "  10 LET x=1:x=2\n",
-        "  10 IF 1 THEN GOTO 10\n",
-        "  10 IF 1 THEN x=2\n",
-        "  10SIN 1\n",
-        "  10\"a\"\n",
-        "  10 PRINT 1:5\n",
-        "  10THEN PRINT 1\n",
-        "  10 TO 5\n",
-        "  10(1)\n",
-        "  10 PRINT 1::x=1\n",
-    ] {
-        assert_eq!(rules(ZX, src), vec![(1, "statement-keyword")], "{src}");
-    }
-    // The ROM takes empty statements, statements after THEN, and colons
-    // inside strings, REM and DATA.
-    for src in [
-        "  10 PRINT 1:\n",
-        "  10 PRINT 1::PRINT 2\n",
-        "  10:PRINT 1\n",
-        "  10 IF 1 THEN PRINT 1\n",
-        "  10 IF 1 THEN :PRINT 1\n",
-        "  10 IF 1 THEN \n",
-        "  10 PRINT \"a:b\"\n",
-        "  10 REM x:GOTO\n",
-        "  10 DATA \"a:b\",x: PRINT 1\n",
-        "  10 GO TO 10\n",
-    ] {
-        let found = rules(ZX, src);
-        assert!(
-            !found.iter().any(|&(_, rule)| rule == "statement-keyword"),
-            "{src}: {found:?}"
-        );
+fn statement_keyword_flags_exactly_what_the_rom_refuses() {
+    let cases = rom_statement_cases();
+    assert!(cases.iter().any(|&(nonsense, _)| nonsense));
+    assert!(cases.iter().any(|&(nonsense, _)| !nonsense));
+    for (nonsense, source) in cases {
+        let src = format!("{source}\n");
+        let found = rules(ZX, &src);
+        let flagged = found.iter().any(|&(_, rule)| rule == "statement-keyword");
+        assert_eq!(flagged, nonsense, "{source}: {found:?}");
     }
 }
 
