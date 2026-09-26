@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7](https://github.com/build198x/build198x/compare/build198x-v0.2.6...build198x-v0.2.7) - 2026-09-26
+
+### Added
+
+- lint BASIC listings against what the machine lists, and refuse to build failures
+- add the basic verb, building Spectrum tapes and C64 PRGs from listings
+- *(adf)* expose file protection bits
+
+### Fixed
+
+- make basic lint --fix drop blank lines, not keep them
+- keep Spectrum tape names to ten printable ASCII characters
+
 ## [0.2.6](https://github.com/build198x/build198x/compare/build198x-v0.2.5...build198x-v0.2.6) - 2026-08-28
 
 ### Added
