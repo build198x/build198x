@@ -203,7 +203,7 @@ fn name_defaults_to_ten_characters_of_the_stem_and_can_be_set() {
 #[test]
 fn json_report_names_the_build() {
     let dir = TempDir::new("json");
-    std::fs::write(dir.path().join("a.bas"), "10 PRINT 1\n\n20 GOTO 10\n").expect("write listing");
+    std::fs::write(dir.path().join("a.bas"), "10 PRINT 1\n20 GOTO 10\n").expect("write listing");
     let (code, out, err) = run_in(
         dir.path(),
         &[

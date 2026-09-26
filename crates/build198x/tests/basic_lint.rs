@@ -53,11 +53,30 @@ fn fix_rewrites_to_the_listed_form_and_is_idempotent() {
 }
 
 #[test]
-fn fix_keeps_blank_lines_and_the_spaces_inside_names() {
+fn fix_drops_blank_lines_and_keeps_the_spaces_inside_names() {
+    // LIST never shows a blank line, so `fix` removes it rather than keeping
+    // it; the spaces inside a numeric variable's name are untouched.
     let fixed = fix(ZX, "10 LET my score = 0\n\n20 STOP\n")
         .expect("lexes")
         .expect("changes");
-    assert_eq!(fixed, "  10 LET my score=0\n\n  20 STOP\n");
+    assert_eq!(fixed, "  10 LET my score=0\n  20 STOP\n");
+}
+
+#[test]
+fn blank_lines_are_flagged_as_listing_form() {
+    assert_eq!(
+        rules(ZX, "  10 STOP\n\n  20 STOP\n"),
+        vec![(2, "listing-form")]
+    );
+    assert!(rules(ZX, "  10 STOP\n  20 STOP\n").is_empty());
+}
+
+#[test]
+fn fix_leaves_a_canonical_no_blank_line_listing_byte_identical() {
+    // A file with no blank lines that is otherwise canonical must not be
+    // rewritten at all, so a Makefile does not touch its mtime for nothing.
+    assert_eq!(fix(ZX, "  10 STOP\n  20 STOP\n").expect("lexes"), None);
+    assert_eq!(fix(C64, "10 END\n").expect("lexes"), None);
 }
 
 #[test]
