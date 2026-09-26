@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8](https://github.com/build198x/build198x/compare/build198x-v0.2.7...build198x-v0.2.8) - 2026-09-26
+
+### Fixed
+
+- require the ROM-exact Spectrum BASIC tokeniser
+
 ## [0.2.7](https://github.com/build198x/build198x/compare/build198x-v0.2.6...build198x-v0.2.7) - 2026-09-26
 
 ### Added
