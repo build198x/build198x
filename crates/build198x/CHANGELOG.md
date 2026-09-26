@@ -11,7 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- require the ROM-exact Spectrum BASIC tokeniser
+- **`build198x basic` writes Spectrum tapes that match the 48K ROM byte for
+  byte.** It now requires `format198x-sinclair-zx-spectrum-bas` 0.1.2
+  ([#51](https://github.com/build198x/build198x/pull/51),
+  [#52](https://github.com/build198x/build198x/pull/52)); 0.2.7 shipped with
+  0.1.0. Four things change in what a tape stores:
+  - Spaces inside numbers and names are read as the ROM reads them: `1 000`
+    is refused, and `a 1` is the variable `a1`.
+  - INK, OVER and the other colour items after PLOT, DRAW and CIRCLE are
+    tokenised.
+  - Hidden numbers come from the ROM's own arithmetic, so `.5` is stored just
+    under a half, as on the machine.
+  - A bare `BIN` stores its hidden zero.
 
 ## [0.2.7](https://github.com/build198x/build198x/compare/build198x-v0.2.6...build198x-v0.2.7) - 2026-09-26
 
