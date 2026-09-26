@@ -65,8 +65,10 @@ Spectrum, a `.prg` at `$0801` for the C64.
 Code198x `docs/specifications/unit.md`): the reader sees the same program on
 the page and in the emulator, and it also pins down every space and blank
 line, which is what the lint rules below check. On the Spectrum, for example,
-the ROM stores and lists a space around `=` that a source line typed without
-one wouldn't have, and lists a space after `CHR$` before its argument:
+a space typed around `=` is stored and `LIST` prints it, so it costs a byte
+and shows on screen; the house style types none there, and the
+`stored-space` rule flags one. `LIST` also prints a space after `CHR$`
+before its argument, so the listed form has one:
 
 ```
 before: 10 LET n = n + 1
