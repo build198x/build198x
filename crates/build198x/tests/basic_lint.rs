@@ -95,6 +95,75 @@ fn keyword_named_variables_are_flagged() {
 }
 
 #[test]
+fn statements_must_start_with_a_command_keyword() {
+    // Every listing flagged here was refused by the genuine 48K ROM's editor
+    // (EDIT, then ENTER, on bytes from this tokeniser) and stopped with
+    // C Nonsense in BASIC when run from a tape.
+    for src in [
+        "  10GOTO 10\n",
+        "  10x=1\n",
+        "  10 LET x=1:x=2\n",
+        "  10 IF 1 THEN GOTO 10\n",
+        "  10 IF 1 THEN x=2\n",
+        "  10SIN 1\n",
+        "  10\"a\"\n",
+        "  10 PRINT 1:5\n",
+        "  10THEN PRINT 1\n",
+        "  10 TO 5\n",
+        "  10(1)\n",
+        "  10 PRINT 1::x=1\n",
+    ] {
+        assert_eq!(rules(ZX, src), vec![(1, "statement-keyword")], "{src}");
+    }
+    // The ROM takes empty statements, statements after THEN, and colons
+    // inside strings, REM and DATA.
+    for src in [
+        "  10 PRINT 1:\n",
+        "  10 PRINT 1::PRINT 2\n",
+        "  10:PRINT 1\n",
+        "  10 IF 1 THEN PRINT 1\n",
+        "  10 IF 1 THEN :PRINT 1\n",
+        "  10 IF 1 THEN \n",
+        "  10 PRINT \"a:b\"\n",
+        "  10 REM x:GOTO\n",
+        "  10 DATA \"a:b\",x: PRINT 1\n",
+        "  10 GO TO 10\n",
+    ] {
+        let found = rules(ZX, src);
+        assert!(
+            !found.iter().any(|&(_, rule)| rule == "statement-keyword"),
+            "{src}: {found:?}"
+        );
+    }
+}
+
+#[test]
+fn statement_keyword_points_at_the_statement_and_hints() {
+    let found = check(ZX, "  10 PRINT 1:GOTO 10\n").expect("lexes");
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].column, 14);
+    assert!(found[0].message.contains("`GO TO`"), "{}", found[0].message);
+    let found = check(ZX, "  10x=1\n").expect("lexes");
+    assert!(
+        found[0].message.contains("needs `LET`"),
+        "{}",
+        found[0].message
+    );
+}
+
+#[test]
+fn fix_leaves_a_line_the_rom_refuses_as_written() {
+    // Its listed form, `  20GOTO 10`, is refused too, so fix has nothing to
+    // mend there; the other lines are still rewritten.
+    let fixed = fix(ZX, "10 PRINT CHR$(147)\n20 GOTO 10\n")
+        .expect("lexes")
+        .expect("changes");
+    assert_eq!(fixed, "  10 PRINT CHR$ (147)\n20 GOTO 10\n");
+    assert_eq!(rules(ZX, &fixed), vec![(2, "statement-keyword")]);
+    assert_eq!(fix(ZX, &fixed).expect("lexes"), None);
+}
+
+#[test]
 fn c64_two_letter_clash() {
     // Names with no keyword inside them: SCORE would tokenise its OR.
     let found = rules(C64, "10 SPEED=1\n20 SPIN=2\n30 SP$=\"A\"\n");

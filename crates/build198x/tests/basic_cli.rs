@@ -409,3 +409,25 @@ fn build_refuses_a_listing_that_fails_lint() {
     );
     assert!(!dir.path().join("a.tap").exists());
 }
+
+#[test]
+fn build_refuses_a_statement_that_does_not_start_with_a_keyword() {
+    let dir = TempDir::new("buildstmt");
+    std::fs::write(dir.path().join("a.bas"), "  10 PRINT 1\n  20 GOTO 10\n")
+        .expect("write listing");
+    let (code, _, err) = run_in(
+        dir.path(),
+        &[
+            "basic",
+            "a.bas",
+            "--machine",
+            "sinclair-zx-spectrum",
+            "-o",
+            "a.tap",
+        ],
+    );
+    assert_eq!(code, 1);
+    assert!(err.contains("a.bas:2:6: statement-keyword:"), "{err}");
+    assert!(!err.contains(": listing-form:"), "{err}");
+    assert!(!dir.path().join("a.tap").exists());
+}

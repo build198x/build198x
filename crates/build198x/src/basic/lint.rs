@@ -11,11 +11,15 @@
 //! | `stored-space` | Spectrum | a space the ROM stores and lists (`LET n = 1`) |
 //! | `string-var-name` | Spectrum | a string variable longer than one letter |
 //! | `keyword-var-name` | Spectrum | a variable named like a keyword (`ink`) |
+//! | `statement-keyword` | Spectrum | a statement that does not start with a command keyword (`GOTO 10`) |
 //! | `keyword-in-name` | C64 | a keyword with name letters on both sides (`SCORE`) |
 //! | `var-name-clash` | C64 | two names BASIC V2 reads as one variable |
 //! | `line-order` | both | a duplicate or descending line number |
 //!
-//! [`fix`] mends the first two by rewriting each line to its listed form.
+//! [`fix`] mends the first two by rewriting each line to its listed form. It
+//! leaves a line with a `statement-keyword` finding as written: its listed
+//! form is a line the ROM refuses too, so there is nothing to mend by
+//! spacing.
 
 use std::collections::{HashMap, HashSet};
 
@@ -41,6 +45,15 @@ pub struct Finding {
 /// LET, FOR, NEXT, INPUT, READ and DIM.
 const ZX_NAME_TAKERS: [u8; 6] = [0xF1, 0xEB, 0xF3, 0xEE, 0xE3, 0xE9];
 
+/// The Spectrum's THEN token, after which a new statement starts, and the
+/// first command token (DEF FN). The ROM's statement loop (STMT-L-1, `1B29`)
+/// subtracts `0xCE` from a statement's first code and gives report C,
+/// Nonsense in BASIC, if it goes below zero; IF jumps back to STMT-L-1 after
+/// THEN (IF-1, `1D00`) (Logan and O'Hara, *The Complete Spectrum ROM
+/// Disassembly*, 1983).
+const ZX_THEN: u8 = 0xCB;
+const ZX_FIRST_COMMAND: u8 = 0xCE;
+
 /// The C64's DATA and FN tokens.
 const C64_DATA: u8 = 0x83;
 const C64_FN: u8 = 0xA5;
@@ -58,6 +71,14 @@ pub fn check(machine: Machine, source: &str) -> Result<Vec<Finding>, Error> {
             for (index, raw) in numbered_lines(source) {
                 let lexed = zx::lex_line(raw).map_err(|e| at_line(index, e.message))?;
                 numbers.push((index, lexed.number));
+                let starts = zx_statement_keyword(index + 1, &lexed);
+                if !starts.is_empty() {
+                    // The listed form of this line is refused too, so a
+                    // listing-form finding would point at a line the ROM
+                    // will not take; report only what is wrong.
+                    findings.retain(|f| !(f.line == index + 1 && f.rule == "listing-form"));
+                    findings.extend(starts);
+                }
                 zx_line(index + 1, &lexed, &mut findings);
             }
         }
@@ -98,6 +119,12 @@ pub fn fix(machine: Machine, source: &str) -> Result<Option<String>, Error> {
         let listed = match machine {
             Machine::SinclairZxSpectrum => {
                 let lexed = zx::lex_line(raw).map_err(|e| at_line(index, e.message))?;
+                if !zx_statement_keyword(index + 1, &lexed).is_empty() {
+                    // Left as written: see `statement-keyword`.
+                    fixed.push_str(raw);
+                    fixed.push('\n');
+                    continue;
+                }
                 let body: Vec<u8> = lexed
                     .pieces
                     .iter()
@@ -225,6 +252,75 @@ fn zx_stored_space(pieces: &[zx::Piece], i: usize) -> bool {
         .iter()
         .find(|p| p.kind != zx::PieceKind::Space);
     !(is_name(before) && is_name(after))
+}
+
+/// `statement-keyword`: a statement whose first piece is not a command
+/// keyword (DEF FN, `0xCE`, to COPY, `0xFF`). A statement starts at the
+/// start of the body, after a `:` outside strings and REM, and after THEN.
+/// An empty statement (`::`, a trailing `:`, nothing after THEN) is fine:
+/// the ROM's statement loop skips a `:` and stops at the end of the line
+/// before it looks for a command. Anything else there, such as a name
+/// (`GOTO 10`, `x=1`), a number, a string, a function or `TO`, is refused
+/// by the ROM's editor, and a tape built from it stops with report C,
+/// Nonsense in BASIC, when the statement runs.
+fn zx_statement_keyword(line: usize, lexed: &zx::LexLine) -> Vec<Finding> {
+    let pieces = &lexed.pieces;
+    let mut findings = Vec::new();
+    let mut at_start = true;
+    for (i, piece) in pieces.iter().enumerate() {
+        match piece.kind {
+            zx::PieceKind::Space => continue,
+            zx::PieceKind::Punct if piece.text == ":" => {
+                at_start = true;
+                continue;
+            }
+            zx::PieceKind::Keyword(ZX_THEN) => {
+                if !at_start {
+                    at_start = true;
+                    continue;
+                }
+            }
+            zx::PieceKind::Keyword(token) if at_start && token >= ZX_FIRST_COMMAND => {
+                at_start = false;
+                continue;
+            }
+            _ => {}
+        }
+        if at_start {
+            findings.push(Finding {
+                line,
+                column: lexed.body_column + piece.column + 1,
+                rule: "statement-keyword",
+                message: zx_statement_message(pieces, i),
+            });
+        }
+        at_start = false;
+    }
+    findings
+}
+
+/// What to say about a statement that starts with piece `i`, with a hint
+/// for the two ways other BASICs lead a learner there.
+fn zx_statement_message(pieces: &[zx::Piece], i: usize) -> String {
+    let text = pieces[i].text.trim_end();
+    let upper = text.to_ascii_uppercase();
+    let next = pieces[i + 1..]
+        .iter()
+        .find(|p| p.kind != zx::PieceKind::Space);
+    let hint = if upper.starts_with("GOTO") {
+        " (the Spectrum's keyword is `GO TO`)".to_owned()
+    } else if upper.starts_with("GOSUB") {
+        " (the Spectrum's keyword is `GO SUB`)".to_owned()
+    } else if pieces[i].kind == zx::PieceKind::Name
+        && next.is_some_and(|p| p.text == "=" || p.text == "(")
+    {
+        format!(" (an assignment needs `LET`: `LET {text}=…`)")
+    } else {
+        String::new()
+    };
+    format!(
+        "a statement starts with `{text}`, not a keyword; the ROM refuses the line (C Nonsense in BASIC){hint}"
+    )
 }
 
 fn zx_line(line: usize, lexed: &zx::LexLine, findings: &mut Vec<Finding>) {
