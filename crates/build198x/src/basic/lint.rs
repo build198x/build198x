@@ -77,7 +77,8 @@ pub fn check(machine: Machine, source: &str) -> Result<Vec<Finding>, Error> {
 
 /// The source with every numbered line replaced by its listed form (for the
 /// Spectrum, after removing the spaces `stored-space` flags), lines joined
-/// with `\n` and ending with one. Blank lines stay where they are.
+/// with `\n` and ending with one. Blank lines are dropped: LIST never shows
+/// one, and a listing reads exactly as LIST shows it.
 ///
 /// Returns `None` when that equals the source normalised the same way, so a
 /// listing that differs only in line endings is left alone.
@@ -92,7 +93,6 @@ pub fn fix(machine: Machine, source: &str) -> Result<Option<String>, Error> {
         normalised.push_str(raw);
         normalised.push('\n');
         if raw.trim().is_empty() {
-            fixed.push('\n');
             continue;
         }
         let listed = match machine {
@@ -136,14 +136,17 @@ fn at_line(index: usize, message: String) -> Error {
 }
 
 /// `listing-form`: a line that is not what LIST prints for it. The whole
-/// line is compared, so the finding is at column 1.
+/// line is compared, so the finding is at column 1. A blank line is flagged
+/// here too: the dialect crates' `listed_form` skips blank lines (there is
+/// no line number to list), but LIST never shows one either, so a source
+/// file with one is not in the listed form.
 fn listing_form(machine: Machine, source: &str) -> Result<Vec<Finding>, Error> {
     let listed = match machine {
         Machine::SinclairZxSpectrum => zx::listed_form(source)?,
         Machine::CommodoreC64 => c64::listed_form(source)?,
     };
     let lines: Vec<&str> = source.lines().collect();
-    Ok(listed
+    let mut findings: Vec<Finding> = listed
         .into_iter()
         .filter_map(|(index, listed)| {
             // The Spectrum lists a space after a keyword that ends the line;
@@ -157,7 +160,20 @@ fn listing_form(machine: Machine, source: &str) -> Result<Vec<Finding>, Error> {
                 message: format!("LIST shows `{listed}`"),
             })
         })
-        .collect())
+        .collect();
+    findings.extend(
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.trim().is_empty())
+            .map(|(index, _)| Finding {
+                line: index + 1,
+                column: 1,
+                rule: "listing-form",
+                message: "a blank line; LIST never shows one".to_owned(),
+            }),
+    );
+    Ok(findings)
 }
 
 /// `line-order`: walking the lines in source order, a number already seen or
