@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.9](https://github.com/build198x/build198x/compare/build198x-v0.2.8...build198x-v0.2.9) - 2026-09-26
+
+### Added
+
+- flag a Spectrum statement that does not start with a keyword
+
+### Fixed
+
+- require the BASIC crates that refuse oversized C64 programs and accept line 0
+- report no spacing rule on a line statement-keyword flags
+
 ## [0.2.8](https://github.com/build198x/build198x/compare/build198x-v0.2.7...build198x-v0.2.8) - 2026-09-26
 
 ### Fixed
