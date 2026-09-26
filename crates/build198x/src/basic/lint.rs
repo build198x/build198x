@@ -19,7 +19,7 @@
 //! [`fix`] mends the first two by rewriting each line to its listed form. It
 //! leaves a line with a `statement-keyword` finding as written: its listed
 //! form is a line the ROM refuses too, so there is nothing to mend by
-//! spacing.
+//! spacing, and [`check`] reports neither spacing rule on that line.
 
 use std::collections::{HashMap, HashSet};
 
@@ -58,6 +58,9 @@ const ZX_FIRST_COMMAND: u8 = 0xCE;
 const C64_DATA: u8 = 0x83;
 const C64_FN: u8 = 0xA5;
 
+/// The rules `fix` mends by rewriting a line to its listed form.
+const SPACING_RULES: [&str; 2] = ["listing-form", "stored-space"];
+
 /// Every finding for one listing, sorted by line then column.
 ///
 /// # Errors
@@ -72,14 +75,15 @@ pub fn check(machine: Machine, source: &str) -> Result<Vec<Finding>, Error> {
                 let lexed = zx::lex_line(raw).map_err(|e| at_line(index, e.message))?;
                 numbers.push((index, lexed.number));
                 let starts = zx_statement_keyword(index + 1, &lexed);
+                zx_line(index + 1, &lexed, &mut findings);
                 if !starts.is_empty() {
-                    // The listed form of this line is refused too, so a
-                    // listing-form finding would point at a line the ROM
-                    // will not take; report only what is wrong.
-                    findings.retain(|f| !(f.line == index + 1 && f.rule == "listing-form"));
+                    // `fix` leaves this line as written, since its listed
+                    // form is refused too, so the spacing rules it would
+                    // mend (listing-form, stored-space) are not reported
+                    // here: the report says only what --fix will not do.
+                    findings.retain(|f| f.line != index + 1 || !SPACING_RULES.contains(&f.rule));
                     findings.extend(starts);
                 }
-                zx_line(index + 1, &lexed, &mut findings);
             }
         }
         Machine::CommodoreC64 => {

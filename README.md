@@ -98,7 +98,9 @@ reports each finding as `file:line:column: rule: message`:
 what remains (a rule like `string-var-name` names a real syntax problem, not
 a formatting one, so `--fix` leaves it for you to fix by hand). A line with a
 `statement-keyword` finding is left exactly as written, since its listed
-form would be refused too, and only that finding is reported for it. A file
+form would be refused too. `listing-form` and `stored-space` are not
+reported on that line, because `--fix` will not apply them there; any other
+finding on it still is. A file
 already in listed form is left untouched, so a Makefile can run `lint --fix`
 on every build without rewriting files that don't need it.
 

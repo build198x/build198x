@@ -122,7 +122,29 @@ fn statement_keyword_flags_exactly_what_the_rom_refuses() {
         let found = rules(ZX, &src);
         let flagged = found.iter().any(|&(_, rule)| rule == "statement-keyword");
         assert_eq!(flagged, nonsense, "{source}: {found:?}");
+        if nonsense {
+            // No spacing rule is reported on a line --fix leaves as written.
+            assert_eq!(found, vec![(1, "statement-keyword")], "{source}");
+        }
     }
+}
+
+#[test]
+fn spacing_rules_are_not_reported_on_a_flagged_line() {
+    // `LET x = 1` has two stored spaces, but the line is refused for `x=2`,
+    // so --fix leaves it alone and only statement-keyword is reported, before
+    // and after --fix.
+    let src = "10 LET x = 1:x=2\n20 LET y = 2\n";
+    let expected = vec![
+        (1, "statement-keyword"),
+        (2, "listing-form"),
+        (2, "stored-space"),
+        (2, "stored-space"),
+    ];
+    assert_eq!(rules(ZX, src), expected);
+    let fixed = fix(ZX, src).expect("lexes").expect("changes");
+    assert_eq!(fixed, "10 LET x = 1:x=2\n  20 LET y=2\n");
+    assert_eq!(rules(ZX, &fixed), vec![(1, "statement-keyword")]);
 }
 
 #[test]
