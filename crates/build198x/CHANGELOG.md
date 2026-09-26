@@ -11,12 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- flag a Spectrum statement that does not start with a keyword
+- **`statement-keyword`: a Spectrum lint rule for lines the ROM refuses**
+  ([#54](https://github.com/build198x/build198x/pull/54)). After a line
+  number, a colon or `THEN`, the 48K ROM expects a statement keyword. It
+  refuses a statement that starts with a name, a number, a string, a function,
+  `TO` or `THEN`. `build198x basic lint` now flags exactly those lines, `--fix`
+  leaves them as written (and reports no spacing rules for them), and
+  `build198x basic` refuses to build them. The rule was checked against
+  34 lines typed into the genuine ROM, and its tests read what the ROM did from
+  a committed fixture.
 
 ### Fixed
 
-- require the BASIC crates that refuse oversized C64 programs and accept line 0
-- report no spacing rule on a line statement-keyword flags
+- **An oversized C64 program is now an error**
+  ([#56](https://github.com/build198x/build198x/pull/56)). A program too big
+  for BASIC memory (`$0801`–`$9FFF`) used to build without complaint and could
+  neither LIST nor RUN. C64 line 0 is now accepted, as the C64 ROM does, and
+  out-of-range line numbers get one message on both machines.
 
 ## [0.2.8](https://github.com/build198x/build198x/compare/build198x-v0.2.7...build198x-v0.2.8) - 2026-09-26
 
