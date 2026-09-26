@@ -1279,6 +1279,7 @@ fn top_usage() -> String {
          \x20 {name} beeper <input.bpr> [--out-dir <dir>] [--wav] [--asm] [--force]\n\
          \x20 {name} adf <exe> -o <out.adf> [--volume <label>] [--name <file>]\n\
          \x20 {name} basic <in.bas> --machine <id> -o <out> [--name <name>] [--no-autorun]\n\
+         \x20 {name} basic lint <in.bas>... --machine <id> [--fix]\n\
          \x20 {name} --version\n\
          \x20 {name} --help\n\n\
          run `{name} image --help` or `{name} beeper --help` for each converter's flags.",
@@ -2275,6 +2276,9 @@ fn adf_verb_usage(verb: &str) -> String {
 /// rebuilds its outputs in place. Nothing is written when the listing fails
 /// lint or tokenisation. `--format` reuses the adf verbs' text/JSON switch.
 fn basic_command(args: &[String]) -> ExitCode {
+    if args.first().is_some_and(|a| a == "lint") {
+        return basic_lint(&args[1..]);
+    }
     let (fmt, args) = match adf_take_format(args) {
         Ok(v) => v,
         Err(e) => return basic_arg_error(&e),
@@ -2365,13 +2369,30 @@ fn basic_command(args: &[String]) -> ExitCode {
         }
     };
 
-    let findings = basic_lint_findings(machine, &source);
-    if !findings.is_empty() {
-        for finding in &findings {
-            eprintln!("{in_path}:{finding}");
+    // Building lints first, so a Makefile cannot build a listing that fails.
+    match build198x::basic::lint::check(machine, &source) {
+        Ok(findings) if findings.is_empty() => {}
+        Ok(findings) => {
+            for f in &findings {
+                eprintln!(
+                    "{in_path}:{}:{}: {}: {}",
+                    f.line, f.column, f.rule, f.message
+                );
+            }
+            eprintln!(
+                "build198x basic: {in_path} fails lint; nothing written \
+                 (`build198x basic lint --fix` mends listing-form and stored-space)"
+            );
+            return ExitCode::from(1);
         }
-        eprintln!("build198x basic: {in_path} fails lint; nothing written");
-        return ExitCode::from(1);
+        Err(e) if e.line == 0 => {
+            eprintln!("{in_path}: {}", e.message);
+            return ExitCode::from(1);
+        }
+        Err(e) => {
+            eprintln!("{in_path}:{}: {}", e.line, e.message);
+            return ExitCode::from(1);
+        }
     }
 
     // The tape header name defaults to the output's stem, cut to the
@@ -2407,11 +2428,185 @@ fn basic_command(args: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// The lint findings that stop a build, each as `line:column: rule: message`.
-/// Building runs every lint rule first so a Makefile cannot build a listing
-/// that fails lint. No rules are wired in yet, so this finds nothing.
-fn basic_lint_findings(_machine: build198x::basic::Machine, _source: &str) -> Vec<String> {
-    Vec::new()
+/// `build198x basic lint <in.bas>... --machine <id> [--fix] [--format
+/// text|json]` — report every lint finding as `path:line:column: rule:
+/// message`. With `--fix`, a listing that changes is rewritten to its listed
+/// form first (atomically; an unchanged file is not touched), then checked
+/// again, so what is printed is what remains.
+///
+/// Exits 0 when nothing remains, 1 on any finding or a listing that cannot be
+/// read, lexed or written, and 2 on a usage error.
+fn basic_lint(args: &[String]) -> ExitCode {
+    let (fmt, args) = match adf_take_format(args) {
+        Ok(v) => v,
+        Err(e) => return basic_lint_arg_error(&e),
+    };
+    let mut paths: Vec<&String> = Vec::new();
+    let mut machine: Option<build198x::basic::Machine> = None;
+    let mut fix = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--help" | "-h" => {
+                println!("{}", basic_lint_usage());
+                return ExitCode::SUCCESS;
+            }
+            "--machine" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => match build198x::basic::Machine::from_id(v) {
+                        Some(m) => machine = Some(m),
+                        None => {
+                            return basic_lint_arg_error(&format!(
+                                "unknown machine `{v}` (use sinclair-zx-spectrum or commodore-c64)"
+                            ));
+                        }
+                    },
+                    None => return basic_lint_arg_error("--machine needs an id"),
+                }
+            }
+            "--fix" => fix = true,
+            other if other.starts_with('-') && other.len() > 1 => {
+                return basic_lint_arg_error(&format!("unknown flag `{other}`"));
+            }
+            _ => paths.push(&args[i]),
+        }
+        i += 1;
+    }
+    if paths.is_empty() {
+        return basic_lint_arg_error("no listing given");
+    }
+    let Some(machine) = machine else {
+        return basic_lint_arg_error("no machine given (--machine <id>)");
+    };
+
+    let mut failed = false;
+    let mut remaining: Vec<(&str, build198x::basic::lint::Finding)> = Vec::new();
+    let mut fixed: Vec<&str> = Vec::new();
+    for path in paths {
+        match basic_lint_file(machine, path, fix) {
+            Ok((findings, rewritten)) => {
+                if rewritten {
+                    fixed.push(path);
+                }
+                remaining.extend(findings.into_iter().map(|f| (path.as_str(), f)));
+            }
+            Err(message) => {
+                eprintln!("{message}");
+                failed = true;
+            }
+        }
+    }
+
+    match fmt {
+        AdfFormat::Text => {
+            for path in &fixed {
+                eprintln!("{path}: rewritten to its listed form");
+            }
+            for (path, f) in &remaining {
+                println!("{path}:{}:{}: {}: {}", f.line, f.column, f.rule, f.message);
+            }
+        }
+        AdfFormat::Json => println!("{}", basic_lint_json(machine, &fixed, &remaining)),
+    }
+    if failed || !remaining.is_empty() {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Lint one listing, fixing it first when asked. Returns the findings left
+/// and whether the file was rewritten, or a message naming the file (and
+/// the source line, when there is one) when it cannot be read, lexed or
+/// written.
+fn basic_lint_file(
+    machine: build198x::basic::Machine,
+    path: &str,
+    fix: bool,
+) -> Result<(Vec<build198x::basic::lint::Finding>, bool), String> {
+    use build198x::basic::lint;
+    let describe = |e: build198x::basic::Error| {
+        if e.line == 0 {
+            format!("{path}: {}", e.message)
+        } else {
+            format!("{path}:{}: {}", e.line, e.message)
+        }
+    };
+    let mut source = std::fs::read_to_string(path)
+        .map_err(|e| format!("build198x basic lint: cannot read {path}: {e}"))?;
+    let mut rewritten = false;
+    if fix && let Some(new) = lint::fix(machine, &source).map_err(describe)? {
+        write_atomic(Path::new(path), new.as_bytes())
+            .map_err(|e| format!("build198x basic lint: {e}"))?;
+        source = new;
+        rewritten = true;
+    }
+    let findings = lint::check(machine, &source).map_err(describe)?;
+    Ok((findings, rewritten))
+}
+
+fn basic_lint_json(
+    machine: build198x::basic::Machine,
+    fixed: &[&str],
+    remaining: &[(&str, build198x::basic::lint::Finding)],
+) -> String {
+    let fixed: Vec<String> = fixed
+        .iter()
+        .map(|p| format!("\"{}\"", json_escape(p)))
+        .collect();
+    let findings: Vec<String> = remaining
+        .iter()
+        .map(|(path, f)| {
+            format!(
+                "{{\"path\":\"{}\",\"line\":{},\"column\":{},\"rule\":\"{}\",\"message\":\"{}\"}}",
+                json_escape(path),
+                f.line,
+                f.column,
+                f.rule,
+                json_escape(&f.message)
+            )
+        })
+        .collect();
+    format!(
+        "{{\"tool_version\":\"{}\",\"machine\":\"{}\",\"fixed\":[{}],\"findings\":[{}]}}",
+        json_escape(env!("CARGO_PKG_VERSION")),
+        machine.id(),
+        fixed.join(","),
+        findings.join(",")
+    )
+}
+
+fn basic_lint_arg_error(msg: &str) -> ExitCode {
+    eprintln!("build198x basic lint: {msg}\n\n{}", basic_lint_usage());
+    ExitCode::from(2)
+}
+
+fn basic_lint_usage() -> String {
+    format!(
+        "{name} basic lint — check BASIC listings against what the machine lists\n\n\
+         usage:\n\
+         \x20 {name} basic lint <in.bas>... --machine <id> [--fix] [--format text|json]\n\n\
+         Prints path:line:column: rule: message for each finding. The rules:\n\
+         \x20 listing-form      a line that differs from what LIST prints (both)\n\
+         \x20 stored-space      a space the ROM stores and lists (Spectrum)\n\
+         \x20 string-var-name   a string variable longer than one letter (Spectrum)\n\
+         \x20 keyword-var-name  a variable named like a keyword (Spectrum)\n\
+         \x20 keyword-in-name   a keyword with name letters on both sides (C64)\n\
+         \x20 var-name-clash    names sharing their first two characters (C64)\n\
+         \x20 line-order        a duplicate or descending line number (both)\n\n\
+         options:\n\
+         \x20 --machine <id>         sinclair-zx-spectrum | commodore-c64 (required)\n\
+         \x20 --fix                  rewrite each listing to its listed form (mends\n\
+         \x20                        listing-form and stored-space), then report\n\
+         \x20                        what remains; unchanged files are not touched\n\
+         \x20 --format <text|json>   report format (default text)\n\n\
+         exit codes:\n\
+         \x20 0  no findings\n\
+         \x20 1  findings remain, or a listing cannot be read, lexed or written\n\
+         \x20 2  usage / argument error",
+        name = env!("CARGO_PKG_NAME")
+    )
 }
 
 fn basic_text(
@@ -2460,10 +2655,11 @@ fn basic_usage() -> String {
     format!(
         "{name} basic — build a BASIC listing into the file its machine loads\n\n\
          usage:\n\
-         \x20 {name} basic <in.bas> --machine <id> -o <out> [options]\n\n\
+         \x20 {name} basic <in.bas> --machine <id> -o <out> [options]\n\
+         \x20 {name} basic lint <in.bas>... --machine <id> [--fix]   (see `basic lint --help`)\n\n\
          The listing is plain text, one numbered line per source line, written\n\
-         as the machine's LIST shows it. Errors name the source line\n\
-         (in.bas:12: ...) and write nothing.\n\n\
+         as the machine's LIST shows it. It must pass `basic lint` before it is\n\
+         built. Errors name the source line (in.bas:12: ...) and write nothing.\n\n\
          options:\n\
          \x20 --machine <id>         sinclair-zx-spectrum | commodore-c64 (required)\n\
          \x20 -o, --output <path>    the file to write (required): .tap for the\n\
