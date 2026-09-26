@@ -88,6 +88,7 @@ reports each finding as `file:line:column: rule: message`:
 | `stored-space` | Spectrum | a space outside strings and `REM` that the ROM stores and lists, such as `LET n = n + 1`; `--fix` removes it. A space inside a numeric variable name (`my score`), which the ROM allows and ignores, is left alone |
 | `string-var-name` | Spectrum | string variables longer than one letter (`name$`), which the ROM rejects |
 | `keyword-var-name` | Spectrum | a variable named like a keyword (`ink`), which the tokeniser can turn into a token |
+| `statement-keyword` | Spectrum | a statement that does not start with a command keyword, such as C64-style `GOTO 10` or `x=1` (the Spectrum needs `GO TO` and `LET`). The ROM's editor refuses the line and a tape built from it stops with C Nonsense in BASIC. A statement starts at the start of the line, after a `:` outside strings and `REM`, and after `THEN`; an empty statement (`::`, a trailing `:`) is fine |
 | `keyword-in-name` | C64 | a keyword with name letters on both sides (`SCORE` holds `OR`), which BASIC V2 turns into a token, so it is not one variable. One-sided contact (`FORI`, `PRINTA`) is ordinary unspaced BASIC V2 and is not flagged |
 | `var-name-clash` | C64 | variables that share their first two characters and type (`SCORE`, `SCALE`), which BASIC V2 treats as one |
 | `line-order` | both | duplicate or descending line numbers |
@@ -95,7 +96,9 @@ reports each finding as `file:line:column: rule: message`:
 `lint --fix` rewrites each listing to its listed form in place — mending
 `listing-form` and `stored-space`, and dropping any blank line — then reports
 what remains (a rule like `string-var-name` names a real syntax problem, not
-a formatting one, so `--fix` leaves it for you to fix by hand). A file
+a formatting one, so `--fix` leaves it for you to fix by hand). A line with a
+`statement-keyword` finding is left exactly as written, since its listed
+form would be refused too, and only that finding is reported for it. A file
 already in listed form is left untouched, so a Makefile can run `lint --fix`
 on every build without rewriting files that don't need it.
 

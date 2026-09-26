@@ -2592,6 +2592,7 @@ fn basic_lint_usage() -> String {
          \x20 stored-space      a space the ROM stores and lists (Spectrum)\n\
          \x20 string-var-name   a string variable longer than one letter (Spectrum)\n\
          \x20 keyword-var-name  a variable named like a keyword (Spectrum)\n\
+         \x20 statement-keyword a statement not starting with a keyword (Spectrum)\n\
          \x20 keyword-in-name   a keyword with name letters on both sides (C64)\n\
          \x20 var-name-clash    names sharing their first two characters (C64)\n\
          \x20 line-order        a duplicate or descending line number (both)\n\n\
