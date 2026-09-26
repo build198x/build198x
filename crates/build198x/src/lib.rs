@@ -10,12 +10,17 @@
 //! `decisions/demand-gate-beeper-phrases.md`): Spectrum beeper-phrase
 //! notation in, audition WAV + phrase assembly out.
 //!
+//! The [`basic`] module (opened by `decisions/demand-gate-basic.md`) builds a
+//! numbered BASIC listing into the file its machine loads, using the
+//! Format198x tokenisers: a Spectrum `.tap` or a C64 `.prg`.
+//!
 //! Module layout and dependency discipline follow
 //! `decisions/module-and-crate-naming.md`: codec modules mirror the crate
 //! names they would become if a second consumer makes a split real, and
 //! they depend on nothing but `core`/`std`; `convert::*` may depend on
 //! `mediaspec198x` and `image`; `beeper::*` is `std`-only.
 
+pub mod basic;
 pub mod beeper;
 pub mod convert;
 pub mod format;
