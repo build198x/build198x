@@ -36,9 +36,17 @@ asm198x. That need was present, not speculative, so the gate opens.
 
 ## Why it lands here
 
-The input is a text listing, not an assembled program, so there is no Asm198x
-step to frame. Tokenising a listing converts a build input, and packaging it as
-a tape or PRG is mastering; both are Build198x lanes. The tokenisers themselves
+The umbrella rule in
+[`tape-framing-vs-mastering.md`](../../../decisions/tape-framing-vs-mastering.md)
+gives Asm198x a tape whose content is the *assembled* program and nothing
+else: that is framing. The same record separates Asm198x's fixed auto-run stub
+from authored BASIC, which it places in Build198x.
+
+A BASIC listing is authored BASIC, and nothing here is assembled. Tokenising
+the listing is conversion, the charter's asset-conversion lane. The TAP or PRG is the
+container that conversion writes, the same way `image` writes a `.scr`. A
+one-program tape is not mastering: the rule keeps that word for composing more
+than one artifact, such as a loader, a loading screen and code. The tokenisers themselves
 moved to Format198x under
 [`formats-graduate-to-their-own-projects.md`](../../../decisions/formats-graduate-to-their-own-projects.md),
 because Build198x is a consumer that is not their producer.

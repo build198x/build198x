@@ -110,7 +110,7 @@ impl From<format198x_commodore_c64_bas::ListingError> for Error {
 }
 
 /// Tokenise one listing and package it for `machine`. `name` is the tape
-/// header name (Spectrum; the header keeps its first ten bytes). `autorun`
+/// header name (Spectrum; passed through [`tape_name`]). `autorun`
 /// makes a Spectrum tape run from the program's first line once loaded.
 ///
 /// # Errors
@@ -140,7 +140,7 @@ pub fn build(machine: Machine, source: &str, name: &str, autorun: bool) -> Resul
             };
             let start = if autorun { first } else { NO_AUTORUN };
             let bytes = encode(&[
-                Header::new(HeaderKind::Program, name, length, start, length).block(),
+                Header::new(HeaderKind::Program, &tape_name(name), length, start, length).block(),
                 TapBlock::data(program.bytes),
             ]);
             Ok(Built {
@@ -161,6 +161,20 @@ pub fn build(machine: Machine, source: &str, name: &str, autorun: bool) -> Resul
             })
         }
     }
+}
+
+/// A name the Spectrum's ten-byte tape header can hold and the ROM prints as
+/// written: its first ten characters, each outside printable ASCII
+/// (`0x20..=0x7E`) replaced by `?`. The ROM prints header bytes from its own
+/// character set, where bytes from `0x80` are block graphics, UDGs and
+/// keywords and bytes below `0x20` are control codes, so a UTF-8 byte would
+/// show as neither the character nor a clean truncation.
+#[must_use]
+pub fn tape_name(name: &str) -> String {
+    name.chars()
+        .take(10)
+        .map(|c| if (' '..='~').contains(&c) { c } else { '?' })
+        .collect()
 }
 
 #[cfg(test)]
@@ -186,6 +200,18 @@ mod tests {
         .expect("builds");
         assert_eq!(built.autorun, Some(10));
         assert_eq!(built.lines, 2);
+    }
+
+    #[test]
+    fn tape_names_are_ten_printable_ascii_characters() {
+        assert_eq!(tape_name("hello"), "hello");
+        assert_eq!(tape_name("shadowkeep-unit-01"), "shadowkeep");
+        assert_eq!(tape_name("caf\u{e9}"), "caf?");
+        assert_eq!(tape_name("\u{65e5}\u{672c}\tx"), "???x");
+        assert_eq!(
+            tape_name("\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"),
+            "??????????"
+        );
     }
 
     #[test]
