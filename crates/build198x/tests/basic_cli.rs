@@ -244,3 +244,26 @@ fn unknown_machine_and_missing_output_are_usage_errors() {
     );
     assert_eq!(code, 2);
 }
+
+#[test]
+fn non_ascii_names_become_question_marks_in_the_header() {
+    let dir = TempDir::new("nonascii");
+    std::fs::write(dir.path().join("a.bas"), "  10 STOP\n").expect("write listing");
+    // Ten characters, but eleven bytes of UTF-8: the header must still hold
+    // ten single-byte characters.
+    let (code, _, err) = run_in(
+        dir.path(),
+        &[
+            "basic",
+            "a.bas",
+            "--machine",
+            "sinclair-zx-spectrum",
+            "-o",
+            "caf\u{e9}-menu-long.tap",
+        ],
+    );
+    assert_eq!(code, 0, "{err}");
+    let tap = std::fs::read(dir.path().join("caf\u{e9}-menu-long.tap")).expect("read tap");
+    let blocks = decode(&tap).expect("decode tap");
+    assert_eq!(&blocks[0].data[1..11], b"caf?-menu-");
+}
