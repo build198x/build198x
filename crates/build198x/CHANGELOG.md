@@ -11,14 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- lint BASIC listings against what the machine lists, and refuse to build failures
-- add the basic verb, building Spectrum tapes and C64 PRGs from listings
-- *(adf)* expose file protection bits
+- **`build198x basic`: BASIC listings to loadable media.** Give it a listing
+  and a machine and it writes what the machine loads: a Spectrum `.tap` with a
+  BASIC header, or a C64 `.prg` at `$0801`
+  ([#50](https://github.com/build198x/build198x/pull/50)):
 
-### Fixed
+  ```
+  build198x basic game.bas --machine sinclair-zx-spectrum -o game.tap
+  build198x basic game.bas --machine commodore-c64 -o game.prg
+  ```
 
-- make basic lint --fix drop blank lines, not keep them
-- keep Spectrum tape names to ten printable ASCII characters
+  A Spectrum tape autoruns from its first stored line unless you pass
+  `--no-autorun`; `--name` sets the ten-character tape name. Tokenising
+  comes from the published `format198x-sinclair-zx-spectrum-bas` and
+  `format198x-commodore-c64-bas` crates.
+- **`build198x basic lint`: is the listing what the machine would LIST?**
+  Seven rules (`listing-form`, `stored-space`, `string-var-name`,
+  `keyword-var-name`, `keyword-in-name`, `var-name-clash`, `line-order`) catch
+  a listing that would come back different from the machine, or that would
+  not run as written. `--fix` rewrites it into the listed form and drops
+  blank lines, leaving an already-correct file byte-for-byte alone.
+  `build198x basic` refuses to build a listing that fails. Where the ROM and a
+  modern tool disagree, the ROM wins: the C64's `?` is stored as PRINT.
+- **`build198x-adf`: protection bits.** `--protect <rwed>` sets the mastered
+  program's permissions and `create --protect-file <dest>=<rwed>` sets an added
+  file's; `e` matches AmigaDOS `protect <file> +e`.
 
 ## [0.2.6](https://github.com/build198x/build198x/compare/build198x-v0.2.5...build198x-v0.2.6) - 2026-08-28
 

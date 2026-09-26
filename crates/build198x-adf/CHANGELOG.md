@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(adf)* expose file protection bits
+- **Protection bits.** `--protect <rwed>` sets the mastered program's
+  permissions and `create --protect-file <dest>=<rwed>` sets an added file's.
+  The default is `rwed`; `e` matches the AmigaDOS command `protect <file> +e`.
 
 ## [0.2.6](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.5...build198x-adf-v0.2.6) - 2026-08-28
 
