@@ -154,9 +154,9 @@ checksum = "641c6f3b86ca751d339a99548aea33a6954f58519e7e03d4a632980bfef9cc04"
 
 [[package]]
 name = "format198x-commodore-c64-bas"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff0acf06a9eb29a5448283d4191ff28ab7876ebef5bda494479fbed0b5f52325"
+checksum = "e24dd5eca584e085c2122a1f1b637e51711cf50f8a04343cb7627b4b1929e2ea"
 
 [[package]]
 name = "format198x-commodore-c64-koala"
@@ -166,9 +166,9 @@ checksum = "965fe70853b9a857e4c6348e78e04e2dee23b99f234a49a252f4eb0a1145a176"
 
 [[package]]
 name = "format198x-sinclair-zx-spectrum-bas"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05e124a3de1e4a194a85f40734a7fb9be50e38840350dbfaecd91ef71fc77afd"
+checksum = "6b454ee397e33f200d79a874639aeff1fe4d990e68438076f3dc05054c94126f"
 
 [[package]]
 name = "format198x-sinclair-zx-spectrum-scr"
