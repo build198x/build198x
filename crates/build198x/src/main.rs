@@ -83,6 +83,7 @@ fn main() -> ExitCode {
             "image" => image_command(rest),
             "beeper" => beeper_command(rest),
             "adf" => adf_command(rest),
+            "basic" => basic_command(rest),
             "--version" | "-V" => {
                 println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
                 ExitCode::SUCCESS
@@ -1277,6 +1278,7 @@ fn top_usage() -> String {
          \x20 {name} image <input.png> [more inputs...] --machine <id> --format <f> [options]\n\
          \x20 {name} beeper <input.bpr> [--out-dir <dir>] [--wav] [--asm] [--force]\n\
          \x20 {name} adf <exe> -o <out.adf> [--volume <label>] [--name <file>]\n\
+         \x20 {name} basic <in.bas> --machine <id> -o <out> [--name <name>] [--no-autorun]\n\
          \x20 {name} --version\n\
          \x20 {name} --help\n\n\
          run `{name} image --help` or `{name} beeper --help` for each converter's flags.",
@@ -2261,6 +2263,224 @@ fn adf_verb_usage(verb: &str) -> String {
         ),
         _ => adf_master_usage(),
     }
+}
+
+// --- basic: a BASIC listing to the file its machine loads ---
+
+/// `build198x basic <in.bas> --machine <id> -o <out> [--name <name>]
+/// [--no-autorun] [--format text|json]` — tokenise a listing and write the
+/// file its machine loads (`.tap` for the Spectrum, `.prg` for the C64).
+///
+/// The output is written atomically but without a clobber check: a Makefile
+/// rebuilds its outputs in place. Nothing is written when the listing fails
+/// lint or tokenisation. `--format` reuses the adf verbs' text/JSON switch.
+fn basic_command(args: &[String]) -> ExitCode {
+    let (fmt, args) = match adf_take_format(args) {
+        Ok(v) => v,
+        Err(e) => return basic_arg_error(&e),
+    };
+    let mut in_path: Option<&String> = None;
+    let mut out_path: Option<&String> = None;
+    let mut machine: Option<build198x::basic::Machine> = None;
+    let mut name: Option<String> = None;
+    let mut autorun = true;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--help" | "-h" => {
+                println!("{}", basic_usage());
+                return ExitCode::SUCCESS;
+            }
+            "--machine" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => match build198x::basic::Machine::from_id(v) {
+                        Some(m) => machine = Some(m),
+                        None => {
+                            return basic_arg_error(&format!(
+                                "unknown machine `{v}` (use sinclair-zx-spectrum or commodore-c64)"
+                            ));
+                        }
+                    },
+                    None => return basic_arg_error("--machine needs an id"),
+                }
+            }
+            "-o" | "--output" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => out_path = Some(v),
+                    None => return basic_arg_error("-o needs a path"),
+                }
+            }
+            "--name" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => name = Some(v.clone()),
+                    None => return basic_arg_error("--name needs a value"),
+                }
+            }
+            "--no-autorun" => autorun = false,
+            other if other.starts_with('-') && other.len() > 1 => {
+                return basic_arg_error(&format!("unknown flag `{other}`"));
+            }
+            _ => {
+                if in_path.is_some() {
+                    return basic_arg_error("more than one listing given");
+                }
+                in_path = Some(&args[i]);
+            }
+        }
+        i += 1;
+    }
+
+    let Some(in_path) = in_path else {
+        return basic_arg_error("no listing given");
+    };
+    let Some(machine) = machine else {
+        return basic_arg_error("no machine given (--machine <id>)");
+    };
+    let Some(out_path) = out_path else {
+        return basic_arg_error(&format!(
+            "no output path given (-o <out.{}>)",
+            machine.extension()
+        ));
+    };
+    let out = Path::new(out_path);
+    let extension_matches = out
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(machine.extension()));
+    if !extension_matches {
+        return basic_arg_error(&format!(
+            "{out_path}: {} builds a .{} file",
+            machine.id(),
+            machine.extension()
+        ));
+    }
+
+    let source = match std::fs::read_to_string(in_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("build198x basic: cannot read {in_path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let findings = basic_lint_findings(machine, &source);
+    if !findings.is_empty() {
+        for finding in &findings {
+            eprintln!("{in_path}:{finding}");
+        }
+        eprintln!("build198x basic: {in_path} fails lint; nothing written");
+        return ExitCode::from(1);
+    }
+
+    // The tape header name defaults to the output's stem, cut to the
+    // header's ten characters, as asm198x derives its headers.
+    let name = name.unwrap_or_else(|| {
+        out.file_stem()
+            .map(|s| s.to_string_lossy().chars().take(10).collect())
+            .unwrap_or_default()
+    });
+
+    let built = match build198x::basic::build(machine, &source, &name, autorun) {
+        Ok(b) => b,
+        Err(e) if e.line == 0 => {
+            eprintln!("{in_path}: {}", e.message);
+            return ExitCode::from(1);
+        }
+        Err(e) => {
+            eprintln!("{in_path}:{}: {}", e.line, e.message);
+            return ExitCode::from(1);
+        }
+    };
+
+    if let Err(e) = write_atomic(out, &built.bytes) {
+        eprintln!("build198x basic: {e}");
+        return ExitCode::from(1);
+    }
+
+    let line = match fmt {
+        AdfFormat::Text => basic_text(machine, out_path, &built),
+        AdfFormat::Json => basic_json(machine, in_path, out_path, &built),
+    };
+    println!("{line}");
+    ExitCode::SUCCESS
+}
+
+/// The lint findings that stop a build, each as `line:column: rule: message`.
+/// Building runs every lint rule first so a Makefile cannot build a listing
+/// that fails lint. No rules are wired in yet, so this finds nothing.
+fn basic_lint_findings(_machine: build198x::basic::Machine, _source: &str) -> Vec<String> {
+    Vec::new()
+}
+
+fn basic_text(
+    machine: build198x::basic::Machine,
+    out_path: &str,
+    built: &build198x::basic::Built,
+) -> String {
+    let autorun = match built.autorun {
+        Some(line) => format!("runs from line {line}"),
+        None => "does not run by itself".to_owned(),
+    };
+    format!(
+        "{out_path}: {} BASIC, {} lines, {} bytes, {autorun}",
+        machine.id(),
+        built.lines,
+        built.program_length
+    )
+}
+
+fn basic_json(
+    machine: build198x::basic::Machine,
+    in_path: &str,
+    out_path: &str,
+    built: &build198x::basic::Built,
+) -> String {
+    let autorun = built
+        .autorun
+        .map_or_else(|| "null".to_owned(), |line| line.to_string());
+    format!(
+        "{{\"tool_version\":\"{}\",\"machine\":\"{}\",\"input\":\"{}\",\"output\":\"{}\",\"lines\":{},\"program_length\":{},\"autorun\":{autorun}}}",
+        json_escape(env!("CARGO_PKG_VERSION")),
+        machine.id(),
+        json_escape(in_path),
+        json_escape(out_path),
+        built.lines,
+        built.program_length
+    )
+}
+
+fn basic_arg_error(msg: &str) -> ExitCode {
+    eprintln!("build198x basic: {msg}\n\n{}", basic_usage());
+    ExitCode::from(2)
+}
+
+fn basic_usage() -> String {
+    format!(
+        "{name} basic — build a BASIC listing into the file its machine loads\n\n\
+         usage:\n\
+         \x20 {name} basic <in.bas> --machine <id> -o <out> [options]\n\n\
+         The listing is plain text, one numbered line per source line, written\n\
+         as the machine's LIST shows it. Errors name the source line\n\
+         (in.bas:12: ...) and write nothing.\n\n\
+         options:\n\
+         \x20 --machine <id>         sinclair-zx-spectrum | commodore-c64 (required)\n\
+         \x20 -o, --output <path>    the file to write (required): .tap for the\n\
+         \x20                        Spectrum, .prg for the C64 (a PRG at $0801)\n\
+         \x20 --name <name>          tape header name (Spectrum; default: the -o\n\
+         \x20                        file stem, cut to 10 characters)\n\
+         \x20 --no-autorun           write a tape that loads without running\n\
+         \x20                        (Spectrum; default: run from the first line)\n\
+         \x20 --format <text|json>   report format (default text)\n\n\
+         Outputs are written atomically and overwrite an existing file, so a\n\
+         Makefile can rebuild in place.\n\n\
+         exit codes:\n\
+         \x20 0  success\n\
+         \x20 1  read, lint, tokenise or write failure (nothing written)\n\
+         \x20 2  usage / argument error",
+        name = env!("CARGO_PKG_NAME")
+    )
 }
 
 #[cfg(test)]
