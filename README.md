@@ -9,6 +9,8 @@ build198x image  <input.png> --machine <id> --format <f>   # images → native s
 build198x beeper <input.bpr> [--repeat <n>]                # phrase notation → audition WAV + Spectrum beeper asm
 build198x adf    create <out.adf> [flags]                  # files + directories → Amiga OFS/FFS volume
 build198x adf    <program> -o <out.adf>                    # hunk executable → bootable Amiga disk
+build198x basic  <in.bas> --machine <id> -o <out>          # numbered BASIC listing → tape or PRG
+build198x basic  lint <in.bas>... --machine <id> [--fix]   # check (and mend) a listing against its listed form
 ```
 
 ## The tools
@@ -19,7 +21,9 @@ build198x adf    <program> -o <out.adf>                    # hunk executable →
 
 **`adf`** — creates, masters, verifies, and inspects Commodore Amiga ADF floppy images. `master` (and the shorthand form shown above) packages one hunk executable into a bootable disk; `create` authors a general OFS or FFS volume from files and directories. `verify` performs a deep structural and checksum check, while `info` reports the filesystem and directory contents. The command delegates the disk layout to the standalone [`format198x-commodore-amiga-adf`](https://crates.io/crates/format198x-commodore-amiga-adf) library owned by Format198x; Build198x owns the mastering workflow and CLI.
 
-Each tool opened on a named concrete need (the demand gate): see [`decisions/demand-gate-opening.md`](decisions/demand-gate-opening.md), [`decisions/demand-gate-beeper-phrases.md`](decisions/demand-gate-beeper-phrases.md), and the completed [`decisions/demand-gate-adf-master.md`](decisions/demand-gate-adf-master.md).
+**`basic`** — turns a numbered BASIC listing into the file its machine loads: a self-starting ZX Spectrum `.tap`, or a Commodore 64 `.prg` at `$0801`. `basic lint` checks (and, with `--fix`, mends) a listing against the *listed form* — see [BASIC listings](#basic-listings) below. First consumer: Code198x's ~170 BASIC lesson pages, which had a listing but nothing to run.
+
+Each tool opened on a named concrete need (the demand gate): see [`decisions/demand-gate-opening.md`](decisions/demand-gate-opening.md), [`decisions/demand-gate-beeper-phrases.md`](decisions/demand-gate-beeper-phrases.md), [`decisions/demand-gate-adf-master.md`](decisions/demand-gate-adf-master.md), and [`decisions/demand-gate-basic.md`](decisions/demand-gate-basic.md).
 
 A third lane is pending a boundary decision: the Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE). Its demand gate is recorded in [`decisions/demand-gate-tape-master.md`](decisions/demand-gate-tape-master.md); implementation waits until the Build198x/Asm198x ownership call is settled.
 
@@ -42,6 +46,62 @@ build198x-adf verify data.adf
 build198x-adf info --recursive data.adf
 build198x-adf manifest data.adf
 ```
+
+## BASIC listings
+
+```sh
+build198x basic hello.bas --machine sinclair-zx-spectrum -o hello.tap
+build198x basic hello.bas --machine commodore-c64 -o hello.prg
+build198x basic lint hello.bas --machine sinclair-zx-spectrum --fix
+```
+
+`--machine` picks the machine (`sinclair-zx-spectrum` or `commodore-c64`); the
+BASIC dialect and the output container follow from it — a `.tap` (ROM header
+plus data block, auto-running from the program's first line) for the
+Spectrum, a `.prg` at `$0801` for the C64.
+
+**The listed form.** A source file is written exactly as the machine's own
+`LIST` command would display it, line by line. That is the binding rule (see
+Code198x `docs/specifications/unit.md`): the reader sees the same program on
+the page and in the emulator, and it also pins down every space and blank
+line, which is what the lint rules below check. On the Spectrum, for example,
+the ROM stores and lists a space around `=` that a source line typed without
+one wouldn't have, and lists a space after `CHR$` before its argument:
+
+```
+before: 10 LET n = n + 1
+after:    10 LET n=n+1
+
+before: PRINT CHR$(147)
+after:  PRINT CHR$ (147)
+```
+
+`build198x basic` runs every lint rule before it writes anything, so a
+Makefile cannot build a listing that fails lint. `build198x basic lint`
+reports each finding as `file:line:column: rule: message`:
+
+| Rule | Machine | Catches |
+|---|---|---|
+| `listing-form` | both | a line that differs from its listed form (including a blank line — `LIST` never shows one); `--fix` rewrites it |
+| `stored-space` | Spectrum | a space outside strings and `REM` that the ROM stores and lists, such as `LET n = n + 1`; `--fix` removes it. A space inside a numeric variable name (`my score`), which the ROM allows and ignores, is left alone |
+| `string-var-name` | Spectrum | string variables longer than one letter (`name$`), which the ROM rejects |
+| `keyword-var-name` | Spectrum | a variable named like a keyword (`ink`), which the tokeniser can turn into a token |
+| `keyword-in-name` | C64 | a keyword with name letters on both sides (`SCORE` holds `OR`), which BASIC V2 turns into a token, so it is not one variable. One-sided contact (`FORI`, `PRINTA`) is ordinary unspaced BASIC V2 and is not flagged |
+| `var-name-clash` | C64 | variables that share their first two characters and type (`SCORE`, `SCALE`), which BASIC V2 treats as one |
+| `line-order` | both | duplicate or descending line numbers |
+
+`lint --fix` rewrites each listing to its listed form in place — mending
+`listing-form` and `stored-space`, and dropping any blank line — then reports
+what remains (a rule like `string-var-name` names a real syntax problem, not
+a formatting one, so `--fix` leaves it for you to fix by hand). A file
+already in listed form is left untouched, so a Makefile can run `lint --fix`
+on every build without rewriting files that don't need it.
+
+Where a tool and a machine's ROM disagree, **the ROM is the authority.** The
+C64 tokeniser, for instance, stores `?` as the `PRINT` token the way the real
+machine does; VICE's `petcat` does not, and build198x's corpus test
+(`crates/build198x/tests/basic_corpus.rs`) documents that kind of divergence
+explicitly rather than treating petcat as the reference.
 
 ## The roster and the gate
 
