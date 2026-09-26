@@ -32,7 +32,7 @@ format198x-commodore-amiga-ilbm = "0.1.1"
 # The BASIC tokenisers graduated from Emu198x to Format198x, and the TAP
 # container crate the Spectrum build wraps them in. Consumed from crates.io
 # like the codecs above; the `basic` subcommand delegates to them.
-format198x-sinclair-zx-spectrum-bas = "0.1"
+format198x-sinclair-zx-spectrum-bas = "0.1.2"
 format198x-commodore-c64-bas = "0.1"
 format198x-sinclair-zx-spectrum-tap = "0.1"
 # Decode + DynamicImage only. default-features = false keeps the decoder set
