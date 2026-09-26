@@ -1,0 +1,35 @@
+# editor	run	source  (genuine 48K ROM SHA1 5ea7c2b824672e914525d1d5c419d71b84a426a2, @emu198x/zx-spectrum 0.4.0)
+accepted	0 OK, 10:1	10 PRINT 1
+accepted	0 OK, 10:1	10 print 1
+accepted	(running)	10 go to 10
+refused	C Nonsense in BASIC, 10:1	10 GOTO 10
+refused	C Nonsense in BASIC, 10:1	10 goto 10
+refused	C Nonsense in BASIC, 10:1	10 x=1
+refused	C Nonsense in BASIC, 10:1	10 x$="a"
+refused	C Nonsense in BASIC, 10:2	10 LET x=1:x=2
+refused	C Nonsense in BASIC, 10:2	10 LET x = 1:x=2
+refused	C Nonsense in BASIC, 10:2	10 IF 1 THEN GOTO 10
+refused	C Nonsense in BASIC, 10:2	10 IF 1 THEN x=2
+refused	C Nonsense in BASIC, 10:3	10 IF 1 THEN IF 1 THEN x=1
+accepted	C Nonsense in BASIC, 10:1	10 5
+refused	C Nonsense in BASIC, 10:1	10 SIN 1
+refused	C Nonsense in BASIC, 10:1	10 "a"
+refused	C Nonsense in BASIC, 10:1	10 (1)
+refused	C Nonsense in BASIC, 10:1	10 THEN PRINT 1
+refused	C Nonsense in BASIC, 10:1	10 TO 5
+refused	C Nonsense in BASIC, 10:2	10 PRINT 1:5
+refused	C Nonsense in BASIC, 10:2	10 PRINT 1:goto 10
+refused	C Nonsense in BASIC, 10:2	10 PRINT 1: GOTO 10
+refused	C Nonsense in BASIC, 10:3	10 PRINT 1:: x=1
+accepted	0 OK, 10:2	10 PRINT 1:
+accepted	0 OK, 10:3	10 PRINT 1::PRINT 2
+accepted	0 OK, 10:2	10 :PRINT 1
+accepted	0 OK, 10:2	10 IF 1 THEN PRINT 1
+accepted	0 OK, 10:3	10 IF 1 THEN :PRINT 1
+accepted	0 OK, 10:2	10 IF 1 THEN
+accepted	0 OK, 10:1	10 PRINT "a:b"
+accepted	0 OK, 10:1	10 REM x:GOTO
+accepted	0 OK, 10:2	10 DATA 1:PRINT 1
+accepted	0 OK, 10:2	10 DATA "a:b",x:PRINT 1
+accepted	0 OK, 10:2	10 PRINT 1: REM x=1
+accepted	0 OK, 10:2	10 LET x=1: PRINT x
