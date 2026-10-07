@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.10](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.9...build198x-adf-v0.2.10) - 2026-10-07
+
+### Added
+
+- distribute native ARM Linux packages through Homebrew
+
 ## [0.2.7](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.6...build198x-adf-v0.2.7) - 2026-09-26
 
 ### Added
