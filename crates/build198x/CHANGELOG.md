@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.10](https://github.com/build198x/build198x/compare/build198x-v0.2.9...build198x-v0.2.10) - 2026-10-07
+
+### Added
+
+- Install native ARM64 Linux packages through Homebrew, alongside the existing
+  x86-64 Linux and macOS packages. Both Linux architectures install the generated
+  formula and check useful output before the tap is updated.
+  ([#57](https://github.com/build198x/build198x/pull/57))
+
 ## [0.2.9](https://github.com/build198x/build198x/compare/build198x-v0.2.8...build198x-v0.2.9) - 2026-09-26
 
 ### Added
