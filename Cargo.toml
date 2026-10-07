@@ -75,8 +75,9 @@ tap = "build198x/homebrew-tap"
 # .github/workflows/publish-homebrew.yml is the built-in job plus a rebase and
 # retry around the push.
 publish-jobs = ["./publish-homebrew"]
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 pr-run-mode = "plan"
+host-jobs = ["./test-linux-packages"]
 # Restrict dist to tags that start with this. Without it, dist fires on *any*
 # version-shaped tag — `**[0-9]+.[0-9]+.[0-9]+*` — so tagging a library crate
 # hands it a package it cannot build. Asm198x's isa-disasm did exactly that
@@ -95,6 +96,11 @@ tag-namespace = "build198x"
 # release created with that token fires no `release: published` event for
 # another workflow to catch. See .github/workflows/notify-discord.yml.
 post-announce-jobs = ["./notify-discord"]
+
+# Build ARM Linux natively, with the same glibc baseline as x86-64 Linux.
+[workspace.metadata.dist.github-custom-runners.aarch64-unknown-linux-gnu]
+runner = "ubuntu-22.04-arm"
+host = "aarch64-unknown-linux-gnu"
 
 [profile.dist]
 inherits = "release"

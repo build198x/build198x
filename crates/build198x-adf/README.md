@@ -9,6 +9,16 @@ deterministic, dependency-light, OFS and FFS.
 
 ## Install
 
+With Homebrew on macOS or Linux:
+
+```sh
+brew install build198x/tap/build198x-adf
+```
+
+Supports ARM64 and x86-64 Linux, Apple Silicon and Intel macOS.
+
+Or build from source:
+
 ```sh
 cargo install build198x-adf
 ```
