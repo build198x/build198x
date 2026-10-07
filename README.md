@@ -27,6 +27,14 @@ Each tool opened on a named concrete need (the demand gate): see [`decisions/dem
 
 A third lane is pending a boundary decision: the Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE). Its demand gate is recorded in [`decisions/demand-gate-tape-master.md`](decisions/demand-gate-tape-master.md); implementation waits until the Build198x/Asm198x ownership call is settled.
 
+## Homebrew
+
+On macOS (Apple Silicon or Intel) and Linux (ARM64 or x86-64):
+
+```sh
+brew install build198x/tap/build198x
+```
+
 ## Install
 
 Prebuilt binaries for each release are on the [Releases page](https://github.com/build198x/build198x/releases) (built by cargo-dist). The full `build198x` binary is distributed there. The lean ADF-only binary is also published to crates.io:
