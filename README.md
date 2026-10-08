@@ -25,7 +25,7 @@ build198x basic  lint <in.bas>... --machine <id> [--fix]   # check (and mend) a 
 
 Each tool opened on a named concrete need (the demand gate): see [`decisions/demand-gate-opening.md`](decisions/demand-gate-opening.md), [`decisions/demand-gate-beeper-phrases.md`](decisions/demand-gate-beeper-phrases.md), [`decisions/demand-gate-adf-master.md`](decisions/demand-gate-adf-master.md), and [`decisions/demand-gate-basic.md`](decisions/demand-gate-basic.md).
 
-A third lane is pending a boundary decision: the Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE). Its demand gate is recorded in [`decisions/demand-gate-tape-master.md`](decisions/demand-gate-tape-master.md); implementation waits until the Build198x/Asm198x ownership call is settled.
+The Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE) is planned but not implemented. Its [demand gate](decisions/demand-gate-tape-master.md) assigns composed tapes to Build198x; Asm198x retains single-program tape framing. Ownership is settled; the tool still needs to be built.
 
 ## Homebrew
 
