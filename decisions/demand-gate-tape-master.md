@@ -19,13 +19,9 @@ cassette shape of 1983–84:
    emits this format), and
 3. the **CODE block** — the game binary at its org.
 
-This is media *mastering* — the charter's third lane, first exercised (**on
-the working assumption that tape mastering lands here and not in Asm198x —
-itself unsettled; see § "Open: which sibling owns this?"**). Under that
-assumption the membership test passes: it converts build inputs (a binary, a
-screen, loader parameters) into a machine-ready medium; it is not playback
-(Play198x), not emulation. The one boundary in genuine doubt is the Asm198x
-program-framing seam — precisely the open question below.
+This is media *mastering*: it combines a binary, a screen and loader parameters
+into a machine-ready medium. The settled boundary leaves single-program tape
+framing with Asm198x and assigns this composition to Build198x.
 
 ## The concrete need (the gate)
 
@@ -40,7 +36,7 @@ screen, and the **verified 16K build** (org 24576 + explicit SP; booted and
 played 2026-07-03) as the payload option. The other item (Kempston) closed as
 a curriculum try-this the same day.
 
-No tool exists for this today: `asm198x` emits `.sna`; the retired Docker
+At the July demand review, no tool provided this composition: `asm198x` emitted `.sna`; the retired Docker
 image's `pasmonext --tapbas` made loader+code tapes but no loading screen and
 is the toolchain we deliberately walked away from; hand-rolling TAP block
 maths in a project script is exactly the ad-hoc drift this org exists to
@@ -58,29 +54,7 @@ loader BASIC program, SCREEN$ + CODE payloads, 48K and 16K orgs. Out (until
 their own gates fire): TZX, turbo loaders, multiload, copy protection, other
 machines' tape formats.
 
-## Open: which sibling owns this?
-
-Steve flagged (2026-07-03) that the sibling boundary is not settled: a tape is
-the *framing of a program for a machine to load and run*, which is arguably an
-**Asm198x** concern (it already emits `.sna`, and `.tap`/`.tzx` are the same
-"here is a program, ready to run" job in a different container) rather than a
-Build198x **media-mastering** one. The umbrella CLAUDE.md's current line — "Asm
-emits the program; Build masters the media" — puts the cut at the program /
-media seam, but a bootable tape sits *on* that seam: it is media whose entire
-content is one framed program. The two readings:
-
-- **Build198x** (this record's working assumption): a `.tap` is a container
-  format like ADF/D64 — mastering payload bytes into a medium, the third lane
-  of the charter. The loader BASIC and checksums are container plumbing.
-- **Asm198x**: a `.tap` is just another output container for an assembled
-  program, next to `.sna`/`.prg`. The retired Docker `pasmonext --tapbas` made
-  tapes *from the assembler*, which is precedent for this reading.
-
-This is an **umbrella-level** question (it binds Asm198x and Build198x and the
-program/media seam between them), TBC in a later conversation. Until it
-resolves, no tape code is written in either sibling — the loading-screen art
-(the other dependency) is done regardless, so nothing is blocked by parking
-this.
+## Settled ownership
 
 **Resolved 2026-07-08 — both readings were half-right; the seam splits by
 composition.** Umbrella record:
@@ -90,10 +64,10 @@ pasmo `--tapbas`-parity minimal stub) is an Asm198x *framing*; the moment a
 second artifact joins — a loading screen, an authored loader, another program
 — it is *mastering*, owned here. Gloaming's loader + SCREEN$ + CODE tape is
 mastering, so this tool proceeds in Build198x, ingesting a raw binary + org
-(no dependency on Asm198x's not-yet-built `.tap` serialiser). The authored
-BASIC loader reuses Emu198x's `format-sinclair-zx-spectrum-bas` tokeniser
-rather than reimplementing (frictionless: the family licence is
-GPL-2.0-or-later throughout). Steve confirmed loading screens ship on
+(no dependency on Asm198x's tape serialiser). The authored
+BASIC loader reuses the existing tokeniser, now published as
+[`format198x-sinclair-zx-spectrum-bas`](https://crates.io/crates/format198x-sinclair-zx-spectrum-bas),
+rather than reimplementing it. Steve confirmed loading screens ship on
 curriculum tapes, so screen support stays in initial scope alongside the
 test-card default.
 
