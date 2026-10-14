@@ -24,3 +24,4 @@ pub mod basic;
 pub mod beeper;
 pub mod convert;
 pub mod format;
+pub mod plus3;
