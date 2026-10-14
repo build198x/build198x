@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- master BASIC and CODE into loadable Spectrum +3 disks
+- `build198x plus3` masters an authored BASIC loader and assembled CODE into a standard 180 KiB +3DOS disk. The +3 menu Loader runs `DISK`, which can load `DIAG.BIN` at the explicit CODE address.
+- Text and JSON reports identify the output, autorun line and program lengths. Invalid input preserves existing output; replacing it requires `--force`.
+- Disk framing and allocation use the shared Format198x DSK library. Other geometries, EDSK writing and custom boot sectors remain outside this command.
 
 ## [0.2.10](https://github.com/build198x/build198x/compare/build198x-v0.2.9...build198x-v0.2.10) - 2026-10-07
 
