@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.11](https://github.com/build198x/build198x/compare/build198x-v0.2.10...build198x-v0.2.11) - 2026-10-14
+
+### Added
+
+- master BASIC and CODE into loadable Spectrum +3 disks
+
 ## [0.2.10](https://github.com/build198x/build198x/compare/build198x-v0.2.9...build198x-v0.2.10) - 2026-10-07
 
 ### Added
