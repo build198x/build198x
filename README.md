@@ -118,6 +118,23 @@ machine does; VICE's `petcat` does not, and build198x's corpus test
 (`crates/build198x/tests/basic_corpus.rs`) documents that kind of divergence
 explicitly rather than treating petcat as the reference.
 
+## Standard Spectrum +3 disks
+
+```sh
+build198x plus3 --basic loader.bas --code diagnostic.bin --load-address 32768 -o diagnostic.dsk --format json
+```
+
+This masters a fresh single-sided 40-track, 180 KiB +3DOS disk in a standard
+CPCEMU DSK container (194,816 bytes including headers). `DISK` contains the
+linted, tokenised BASIC listing and autoruns its first stored line. `DIAG.BIN`
+contains CODE at the explicit address. The authored loader must load that name
+and call the right entry address; the command does not infer or rewrite BASIC.
+
+Select **Loader** on a cold-booted +3 with this disk in drive A. The route uses
+normal ROM file loading; it does not execute custom boot-sector code. Existing
+output needs `--force`; invalid input leaves it intact. Other geometries,
+EDSK writing, writeback and general CP/M editing are outside this command.
+
 ## The roster and the gate
 
 Three bands: **asset conversion** (graphics, audio, palettes), **data packing** (crunchers, level/tilemap packers), and **media mastering** (disk and tape images, bootable media — ADF, D64, TAP, and friends). It meets [Asm198x](https://github.com/asm198x) at the program-framing handoff: Asm198x emits the program, Build198x masters it onto media.

@@ -84,6 +84,7 @@ fn main() -> ExitCode {
             "beeper" => beeper_command(rest),
             "adf" => adf_command(rest),
             "basic" => basic_command(rest),
+            "plus3" => plus3_command(rest),
             "--version" | "-V" => {
                 println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
                 ExitCode::SUCCESS
@@ -1280,6 +1281,7 @@ fn top_usage() -> String {
          \x20 {name} adf <exe> -o <out.adf> [--volume <label>] [--name <file>]\n\
          \x20 {name} basic <in.bas> --machine <id> -o <out> [--name <name>] [--no-autorun]\n\
          \x20 {name} basic lint <in.bas>... --machine <id> [--fix]\n\
+         \x20 {name} plus3 --basic <loader.bas> --code <code.bin> --load-address <decimal> -o <out.dsk>\n\
          \x20 {name} --version\n\
          \x20 {name} --help\n\n\
          run `{name} image --help` or `{name} beeper --help` for each converter's flags.",
@@ -2267,6 +2269,110 @@ fn adf_verb_usage(verb: &str) -> String {
 }
 
 // --- basic: a BASIC listing to the file its machine loads ---
+
+fn plus3_command(args: &[String]) -> ExitCode {
+    const USAGE: &str = "build198x plus3 --basic <loader.bas> --code <code.bin> --load-address <decimal> -o <out.dsk> [--format text|json] [--force]\n\nWrites a standard 180 KiB +3 disk: DISK autoruns its first BASIC line; DIAG.BIN carries CODE at the supplied address. The authored loader must load and call it.";
+    let fail = |message: &str, code| {
+        eprintln!("build198x plus3: {message}");
+        ExitCode::from(code)
+    };
+    let (fmt, args) = match adf_take_format(args) {
+        Ok(value) => value,
+        Err(e) => return fail(&e, 2),
+    };
+    let (mut basic, mut code, mut output, mut load) = (None, None, None, None);
+    let mut force = false;
+    let mut i = 0;
+    while i < args.len() {
+        let target = match args[i].as_str() {
+            "--help" | "-h" => {
+                println!("{USAGE}");
+                return ExitCode::SUCCESS;
+            }
+            "--force" => {
+                force = true;
+                i += 1;
+                continue;
+            }
+            "--basic" => &mut basic,
+            "--code" => &mut code,
+            "-o" | "--output" => &mut output,
+            "--load-address" => &mut load,
+            other => return fail(&format!("unknown argument `{other}`\n{USAGE}"), 2),
+        };
+        i += 1;
+        let Some(value) = args.get(i) else {
+            return fail("flag needs a value", 2);
+        };
+        if target.replace(value).is_some() {
+            return fail("duplicate argument", 2);
+        }
+        i += 1;
+    }
+    let (Some(basic), Some(code), Some(output), Some(load)) = (basic, code, output, load) else {
+        return fail(USAGE, 2);
+    };
+    let load: u16 = match load.parse() {
+        Ok(value) => value,
+        Err(_) => return fail("load address must be decimal 0..65535", 2),
+    };
+    let out = Path::new(output);
+    if !out
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("dsk"))
+    {
+        return fail("output must have a .dsk extension", 2);
+    }
+    // Canonical paths catch aliases and symlinks. Atomic rename replaces a
+    // hardlink's directory entry rather than modifying its shared input inode.
+    if let Ok(canonical) = out.canonicalize()
+        && [basic, code]
+            .iter()
+            .any(|p| Path::new(p).canonicalize().is_ok_and(|p| p == canonical))
+    {
+        return fail("output aliases an input", 5);
+    }
+    if out.symlink_metadata().is_ok() && !force {
+        return fail("output already exists (use --force)", 5);
+    }
+    let source = match std::fs::read_to_string(basic) {
+        Ok(value) => value,
+        Err(e) => return fail(&format!("cannot read {basic}: {e}"), 3),
+    };
+    let payload = match std::fs::read(code) {
+        Ok(value) => value,
+        Err(e) => return fail(&format!("cannot read {code}: {e}"), 3),
+    };
+    let built = match build198x::plus3::build(&source, &payload, load) {
+        Ok(value) => value,
+        Err(e) => return fail(&e.to_string(), 4),
+    };
+    if let Err(e) = write_atomic(out, &built.bytes) {
+        return fail(&e.to_string(), 5);
+    }
+    if fmt == AdfFormat::Json {
+        println!(
+            "{{\"converter_version\":\"{}\",\"status\":\"ok\",\"output\":\"{}\",\"format\":\"standard-dsk-plus3-180k\",\"bytes\":{},\"basic_file\":\"DISK\",\"code_file\":\"DIAG.BIN\",\"autorun\":{},\"basic_length\":{},\"code_length\":{},\"load_address\":{}}}",
+            env!("CARGO_PKG_VERSION"),
+            json_escape(output),
+            built.bytes.len(),
+            built.autorun,
+            built.basic_length,
+            payload.len(),
+            load
+        );
+    } else {
+        println!(
+            "{}: {} bytes; DISK autorun {}; DIAG.BIN {} bytes at {}",
+            output,
+            built.bytes.len(),
+            built.autorun,
+            payload.len(),
+            load
+        );
+    }
+    ExitCode::SUCCESS
+}
 
 /// `build198x basic <in.bas> --machine <id> -o <out> [--name <name>]
 /// [--no-autorun] [--format text|json]` — tokenise a listing and write the

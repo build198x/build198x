@@ -33,6 +33,7 @@ dependencies = [
 name = "build198x"
 version = "0.2.10"
 dependencies = [
+ "format198x-amstrad-cpc-dsk",
  "format198x-commodore-amiga-adf",
  "format198x-commodore-amiga-ilbm",
  "format198x-commodore-c64-art-studio",
@@ -133,6 +134,12 @@ dependencies = [
  "crc32fast",
  "miniz_oxide",
 ]
+
+[[package]]
+name = "format198x-amstrad-cpc-dsk"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56e72398a2e40bd257b935bb96081a0fb1d576d6f5e5c923e6b12f970eec7409"
 
 [[package]]
 name = "format198x-commodore-amiga-adf"
