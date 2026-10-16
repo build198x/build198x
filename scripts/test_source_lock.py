@@ -97,8 +97,8 @@ class ProducerTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.git("init", "--quiet")
-        (self.root / "Cargo.lock").write_text(
-            'version = 4\n[[package]]\nname="fixture"\nversion="1.0.0"\n'
+        (self.root / "Cargo.lock").write_bytes(
+            b'version = 4\n[[package]]\nname="fixture"\nversion="1.0.0"\n'
         )
         self.git("add", "Cargo.lock")
         # A disposable fixture has no signer; ordinary commit hooks still run.

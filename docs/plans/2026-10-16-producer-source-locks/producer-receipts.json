@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "kind": "producer-source-lock-verification",
+  "verified": true,
+  "scope": "producer-source-lock",
+  "source": {
+    "commit": "b87d9cb8557b831f2f4633716a25fed126d68875",
+    "cargo_lock_sha256": "2726eac2934b9fec3f96745590eb72e0b11a38f03a52bab8c4d01d85f16b2d48"
+  },
+  "target": "aarch64-apple-darwin",
+  "receipts": [
+    {
+      "schema_version": 1,
+      "kind": "producer-source-lock",
+      "signed": false,
+      "source_commit": "b87d9cb8557b831f2f4633716a25fed126d68875",
+      "committed_lock_sha256": "2726eac2934b9fec3f96745590eb72e0b11a38f03a52bab8c4d01d85f16b2d48",
+      "before_lock_sha256": "2726eac2934b9fec3f96745590eb72e0b11a38f03a52bab8c4d01d85f16b2d48",
+      "after_lock_sha256": "2726eac2934b9fec3f96745590eb72e0b11a38f03a52bab8c4d01d85f16b2d48",
+      "package": "build198x",
+      "version": "0.2.11",
+      "archive": "build198x-aarch64-apple-darwin.tar.xz",
+      "target": "aarch64-apple-darwin",
+      "archive_sha256": "f520747dd3f2c31ccae738bcaba50618639c0b9211ae691d622944940439caf0",
+      "executable_sha256": "770c106b6f22aab531d135b1ffdb15016bf509d805ae2a1bd6d2f3767bd6edff",
+      "build": {
+        "job": "local",
+        "run_id": "local",
+        "run_attempt": "local"
+      },
+      "command": [
+        "dist",
+        "build",
+        "--artifacts=all",
+        "--target",
+        "aarch64-apple-darwin",
+        "--output-format=json"
+      ],
+      "compiled_dependency_graph": "unknown"
+    },
+    {
+      "schema_version": 1,
+      "kind": "producer-source-lock",
+      "signed": false,
+      "source_commit": "b87d9cb8557b831f2f4633716a25fed126d68875",
+      "committed_lock_sha256": "2726eac2934b9fec3f96745590eb72e0b11a38f03a52bab8c4d01d85f16b2d48",
+      "before_lock_sha256": "2726eac2934b9fec3f96745590eb72e0b11a38f03a52bab8c4d01d85f16b2d48",
+      "after_lock_sha256": "2726eac2934b9fec3f96745590eb72e0b11a38f03a52bab8c4d01d85f16b2d48",
+      "package": "build198x-adf",
+      "version": "0.2.11",
+      "archive": "build198x-adf-aarch64-apple-darwin.tar.xz",
+      "target": "aarch64-apple-darwin",
+      "archive_sha256": "e6e7a3016a8841d57300d08b59f005d1b7288973a212cdeb7722a7e115ab1527",
+      "executable_sha256": "25f193c19274a2eb8b8d56bbd8241ecfabef7e68fb871e2d30ae620c946782ab",
+      "build": {
+        "job": "local",
+        "run_id": "local",
+        "run_attempt": "local"
+      },
+      "command": [
+        "dist",
+        "build",
+        "--artifacts=all",
+        "--target",
+        "aarch64-apple-darwin",
+        "--output-format=json"
+      ],
+      "compiled_dependency_graph": "unknown"
+    }
+  ]
+}
