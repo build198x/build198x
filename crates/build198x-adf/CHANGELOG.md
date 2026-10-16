@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.12](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.11...build198x-adf-v0.2.12) - 2026-10-16
+
+### Changed
+
+- Publish unsigned producer source-lock receipts beside native archives.
+  Packaging requires the committed Cargo.lock to remain unchanged; native
+  qualification checks source, lock, target, producer run and archive/executable
+  identities before hosting. Receipts do not establish the compiled
+  dependency/features graph or a signing identity. ADF mastering behaviour is
+  unchanged.
+  ([#66](https://github.com/build198x/build198x/pull/66))
+
 ## [0.2.10](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.9...build198x-adf-v0.2.10) - 2026-10-07
 
 ### Added
