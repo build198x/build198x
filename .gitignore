@@ -6,3 +6,6 @@ a.out
 
 # Vale synced package
 .vale/
+
+# Local producer-lock regression tests.
+/scripts/__pycache__/
