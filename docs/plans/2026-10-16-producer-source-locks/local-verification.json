@@ -1,0 +1,63 @@
+{
+  "code_commit": "b87d9cb8557b831f2f4633716a25fed126d68875",
+  "target": "aarch64-apple-darwin",
+  "native_archive_receipts": 2,
+  "unit_tests": 13,
+  "receipt_controls": [
+    {
+      "name": "missing-receipt",
+      "verified": false,
+      "reason": "missing source-lock receipt"
+    },
+    {
+      "name": "wrong-source",
+      "verified": false,
+      "reason": "receipt source commit differs"
+    },
+    {
+      "name": "wrong-archive",
+      "verified": false,
+      "reason": "receipt archive_sha256 differs"
+    }
+  ],
+  "publication_controls": [
+    {
+      "qualification_result": "success",
+      "before": true,
+      "after": true
+    },
+    {
+      "qualification_result": "failure",
+      "before": true,
+      "after": false
+    },
+    {
+      "qualification_result": "skipped",
+      "before": true,
+      "after": false
+    },
+    {
+      "qualification_result": "cancelled",
+      "before": true,
+      "after": false
+    },
+    {
+      "qualification_result": "",
+      "before": true,
+      "after": false
+    },
+    {
+      "qualification_result": null,
+      "before": true,
+      "after": false
+    }
+  ],
+  "native_smoke": {
+    "basic_golden_sha256": "5afe1e9c6d6e80bbe122fc7a92ba75cd320e82579283156c75ce656c1fab31f9",
+    "adf_sha256": "dae28560d571f9d0210a659cbbdc6f8bda45c8d9bfc4d759cf14684285706389",
+    "adf_bytes": 901120,
+    "both_passed": true
+  },
+  "published_release": false,
+  "compiled_dependency_graph": "unknown"
+}
