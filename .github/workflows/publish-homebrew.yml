@@ -40,6 +40,7 @@ jobs:
   publish:
     name: Commit formula to the tap
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       PLAN: ${{ inputs.plan }}
       # The upstream job's identity, kept so the tap's history stays uniform

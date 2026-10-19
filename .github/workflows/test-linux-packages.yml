@@ -1,7 +1,19 @@
 name: Candidate packages
 
 on:
+  # Only changes that can alter a package, or the workflow that builds it
+  # (umbrella docs/plans/2026-10-19-ci-efficiency.md, A4).
   pull_request:
+    paths:
+      - 'Cargo.toml Cargo.lock rust-toolchain.toml .cargo/** scripts/** .github/workflows/** README.md LICENSE CHANGELOG.md'
+      - 'crates/**'
+  # Every merge that touches a package is qualified on main as well.
+  push:
+    branches:
+      - main
+    paths:
+      - 'Cargo.toml Cargo.lock rust-toolchain.toml .cargo/** scripts/** .github/workflows/** README.md LICENSE CHANGELOG.md'
+      - 'crates/**'
   workflow_dispatch:
   workflow_call:
     inputs:
