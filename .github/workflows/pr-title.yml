@@ -26,6 +26,7 @@ jobs:
   conventional:
     name: PR title
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check the title carries a conventional-commit prefix
         env:

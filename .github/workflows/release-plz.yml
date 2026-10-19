@@ -14,6 +14,7 @@ jobs:
   release:
     name: Release merged versions
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -120,6 +121,7 @@ jobs:
     name: Prepare the next release
     needs: release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     concurrency:
       group: release-plz-pr-${{ github.ref }}
       cancel-in-progress: false
