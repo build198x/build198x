@@ -1,142 +1,22 @@
 name: Release-plz
 
+# Tags merged releases, then opens or updates the next release PR, using the
+# workflow every 198x Rust repo shares (stevehill1981/198x-workflows).
 on:
   push:
     branches:
       - main
 
 permissions:
-  pull-requests: write
   contents: write
-  id-token: write # OIDC for crates.io Trusted Publishing — release-plz uses it directly
+  pull-requests: write
+  # crates.io Trusted Publishing matches this file's name, so keep it.
+  id-token: write
 
 jobs:
-  release:
-    name: Release merged versions
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          # release-plz needs full history to diff the changelog from the
-          # last tag.
-          fetch-depth: 0
-          # The `release` step below pushes the version tag with this token. A
-          # tag pushed by GITHUB_TOKEN does NOT trigger other workflows, so the
-          # per-org RELEASE_PLZ_TOKEN (a fine-grained PAT) is required for the
-          # tag to fire cargo-dist's release.yml.
-          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Read pinned toolchain
-        id: toolchain
-        run: |
-          channel=$(awk -F'"' '/^channel/{print $2}' rust-toolchain.toml)
-          echo "channel=${channel}" >> "$GITHUB_OUTPUT"
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.toolchain.outputs.channel }}
-
-      - name: Run release-plz (tag merged releases)
-        id: release
-        uses: release-plz/action@v0.5
-        with:
-          command: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
-
-      # Announce the release in Discord.
-      #
-      # release-plz reports only package_name, version and tag — no notes. The
-      # notes it wrote are in each crate's CHANGELOG.md, committed by the
-      # release PR, so main already holds them when this runs. The script reads
-      # them there, which gives every crate its own changelog in the
-      # announcement rather than a bare list of links.
-      #
-      # Reads DISCORD_RELEASE_WEBHOOK (this project's channel) and
-      # DISCORD_RELEASE_WEBHOOK_ALL (a channel carrying every repo), both
-      # optional. With neither set the step logs and succeeds — a missing
-      # notification must not fail a release that has already published.
-      - name: Announce the release in Discord
-        if: steps.release.outputs.releases_created == 'true'
-        env:
-          WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
-          WEBHOOK_ALL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_ALL }}
-          RELEASES: ${{ steps.release.outputs.releases }}
-          REPO: ${{ github.repository }}
-          SERVER_URL: ${{ github.server_url }}
-        run: |
-          set -euo pipefail
-
-          # Built with `if` rather than `[ -n "$x" ] && arr+=(...)`: under
-          # `set -e` a failing test at the end of a command list exits the step,
-          # so the shorter form would abort whenever a secret is unset.
-          targets=()
-          if [ -n "${WEBHOOK}" ]; then
-            targets+=("$WEBHOOK")
-          fi
-          # Skip an aggregate pointed at the same channel, so a single-channel
-          # setup that fills both secrets does not post twice.
-          if [ -n "${WEBHOOK_ALL}" ] && [ "${WEBHOOK_ALL}" != "${WEBHOOK}" ]; then
-            targets+=("$WEBHOOK_ALL")
-          fi
-
-          if [ ${#targets[@]} -eq 0 ]; then
-            echo "::notice::no Discord webhook secret set — nothing posted."
-            exit 0
-          fi
-
-          rm -f payload-*.json
-          python3 scripts/discord-release-payloads.py \
-            --releases "$RELEASES" \
-            --repo "$REPO" \
-            --server-url "$SERVER_URL" --crates-io-only
-
-          # Every message and every target is attempted even if one fails, so a
-          # stale aggregate URL cannot hide a successful post to the project
-          # channel, and a rejected message cannot swallow the rest.
-          failed=0
-          shopt -s nullglob
-          for payload in payload-*.json; do
-            for target in "${targets[@]}"; do
-              if ! curl --silent --show-error --fail-with-body \
-                        --retry 3 --retry-delay 5 --retry-all-errors \
-                        -H "Content-Type: application/json" \
-                        -X POST -d @"$payload" "$target"; then
-                failed=1
-              fi
-            done
-          done
-
-          if [ "$failed" -ne 0 ]; then
-            echo "::error::at least one Discord post failed; see the output above."
-            exit 1
-          fi
-
-          echo "Announced to ${#targets[@]} Discord channel(s)."
-
-  release-pr:
-    name: Prepare the next release
-    needs: release
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    concurrency:
-      group: release-plz-pr-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
-      - id: toolchain
-        run: echo "channel=$(awk -F'\"' '/^channel/{print $2}' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.toolchain.outputs.channel }}
-      - uses: release-plz/action@v0.5
-        with:
-          command: release-pr
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+  release-plz:
+    name: Release-plz
+    uses: stevehill1981/198x-workflows/.github/workflows/release-plz.yml@v1
+    secrets: inherit
+    with:
+      announce: true
