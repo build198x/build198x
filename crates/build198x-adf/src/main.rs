@@ -47,7 +47,7 @@ fn run(args: &[String]) -> ExitCode {
 }
 
 const ADF_MANIFEST_SCHEMA: &str = "build198x.adf.provenance.v1";
-const FORMAT198X_ADF_VERSION: &str = "0.3.2";
+const FORMAT198X_ADF_VERSION: &str = "0.3.4";
 
 fn cmd_manifest(args: &[String]) -> ExitCode {
     let path = match single_disk_arg("manifest", args) {
@@ -1447,6 +1447,44 @@ mod tests {
             true,
         );
         assert!(json.contains("\"path\":\"Docs/Nested/large.bin\""));
+    }
+
+    #[test]
+    fn manifest_reports_the_resolved_library_version() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace_lock = manifest_dir.join("../../Cargo.lock");
+        let lock_path = if workspace_lock.is_file() {
+            workspace_lock
+        } else {
+            // A published package has its own lockfile, outside the workspace.
+            manifest_dir.join("Cargo.lock")
+        };
+        let lock = std::fs::read_to_string(lock_path).expect("resolved Cargo.lock");
+        let versions: Vec<&str> = lock
+            .split("[[package]]")
+            .filter(|package| {
+                package
+                    .lines()
+                    .any(|line| line == "name = \"format198x-commodore-amiga-adf\"")
+            })
+            .map(|package| {
+                package
+                    .lines()
+                    .find_map(|line| line.strip_prefix("version = \""))
+                    .and_then(|version| version.strip_suffix('"'))
+                    .expect("resolved library version")
+            })
+            .collect();
+        assert_eq!(versions.len(), 1, "exactly one resolved ADF library");
+        let manifest = manifest_json(&good_adf()).expect("manifest");
+        let library = format!(
+            "\"library\":{{\"name\":\"format198x-commodore-amiga-adf\",\"version\":\"{}\"}}",
+            versions[0]
+        );
+        assert!(
+            manifest.contains(&library),
+            "manifest must report {library}"
+        );
     }
 
     #[test]

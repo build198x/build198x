@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Accept native AmigaDOS disks with data after the bitmap allocation map.
+  Checks still reject damaged checksums, padding bits and block allocations.
+
 ## [0.2.12](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.11...build198x-adf-v0.2.12) - 2026-10-16
 
 ### Changed
