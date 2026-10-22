@@ -30,8 +30,13 @@ REPLACEMENTS = [
     ("github.ref_name", "(inputs.release_tag || github.ref_name)", 3),
     (
         "          persist-credentials: false\n",
-        "          persist-credentials: false\n          ref: ${{ inputs.release_tag || github.ref }}\n",
+        "          persist-credentials: false\n          ref: ${{ needs.plan.outputs.source }}\n",
         5,
+    ),
+    (
+        "          ref: ${{ needs.plan.outputs.source }}\n          submodules: recursive\n      - name: Install dist\n        # we specify bash",
+        "          ref: ${{ inputs.release_tag || github.ref }}\n          submodules: recursive\n      - name: Install dist\n        # we specify bash",
+        1,
     ),
     (
         "    outputs:\n      val: ${{ steps.plan.outputs.manifest }}\n",
@@ -45,7 +50,7 @@ REPLACEMENTS = [
     ),
     (
         "uses: ./.github/workflows/test-linux-packages.yml\n    with:\n",
-        "uses: ./.github/workflows/test-linux-packages.yml\n    with:\n      source_ref: ${{ inputs.release_tag || github.ref }}\n",
+        "uses: ./.github/workflows/test-linux-packages.yml\n    with:\n      source_ref: ${{ needs.plan.outputs.source }}\n",
         1,
     ),
     (

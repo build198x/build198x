@@ -104,9 +104,12 @@ class DispatchTests(unittest.TestCase):
             )
         output = add_dispatch(original)
         self.assertEqual(
-            output.count("          ref: ${{ inputs.release_tag || github.ref }}"), 5
+            output.count("          ref: ${{ inputs.release_tag || github.ref }}"), 1
         )
-        self.assertIn("source_ref: ${{ inputs.release_tag || github.ref }}", output)
+        self.assertIn("source_ref: ${{ needs.plan.outputs.source }}", output)
+        self.assertEqual(
+            output.count("          ref: ${{ needs.plan.outputs.source }}"), 4
+        )
         self.assertIn('RELEASE_COMMIT: "${{ needs.plan.outputs.source }}"', output)
 
 
