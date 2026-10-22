@@ -61,7 +61,8 @@ class DispatchTests(unittest.TestCase):
         )
 
     def test_existing_tag_binds_the_actual_commit(self) -> None:
-        self.assertEqual(self.guard("build198x-adf-v0.2.13").returncode, 0)
+        result = self.guard("build198x-adf-v0.2.13")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(
             (self.root / "output").read_text(),
             f"commit={self.git('rev-parse', 'HEAD').decode().strip()}\n",
@@ -87,7 +88,8 @@ class DispatchTests(unittest.TestCase):
         self.assertFalse((self.root / "output").exists())
 
     def test_ordinary_events_retain_their_checkout_identity(self) -> None:
-        self.assertEqual(self.guard("", "pull_request").returncode, 0)
+        result = self.guard("", "pull_request")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(
             self.git("rev-parse", "HEAD").decode().strip(),
             (self.root / "output").read_text(),
