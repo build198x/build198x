@@ -31,3 +31,11 @@ reports the same five upstream generated ShellCheck alerts as main: SC2086
 those unrelated generated scripts are not changed here. Early checks caught an
 over-broad Install dist anchor and a test counting source_ref as ref; the final
 checks use exact anchors and indented checkout fields.
+
+Windows CI's first positive controls failed. Captured subprocess output showed
+`Windows Subsystem for Linux has no installed distributions.` Python had found
+the Windows WSL launcher named bash, unlike the workflow's Git Bash shell.
+The test now locates an existing Bash beside the installed Git for Windows.
+It fails if that shell is missing; it does not install WSL or skip the tests.
+The positive controls remain required so a broken shell cannot make rejection
+controls look successful. All other native hosts passed the initial controls.
