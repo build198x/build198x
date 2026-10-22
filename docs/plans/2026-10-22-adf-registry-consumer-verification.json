@@ -1,0 +1,93 @@
+{
+  "library_version": "0.3.4",
+  "standalone_cli_version": "0.2.13",
+  "native_images": [
+    {
+      "image_sha256": "b940e6432f94bddf0ecaf3d271e2b237a3bda0e33d136bf61ba0be4138a5b925",
+      "bytes": 901120,
+      "verified_by_both_consumers": true
+    },
+    {
+      "image_sha256": "7fbad01bba443f45b8d8cec3c7e8d3e193b5e3b2a126ef3a553991178477b8d4",
+      "bytes": 901120,
+      "verified_by_both_consumers": true
+    },
+    {
+      "image_sha256": "83287e6936f9891b0822e71cdd7b2c7e928015d8e71952a98f04c0124b1ea4ac",
+      "bytes": 901120,
+      "verified_by_both_consumers": true
+    },
+    {
+      "image_sha256": "5a5d9621abc1b3e71d06628136194cd240766a5bddc76a7f460b24bb4f82bcd8",
+      "bytes": 901120,
+      "verified_by_both_consumers": true
+    },
+    {
+      "image_sha256": "75180c1a34cc5e2577780da52f22856ce11d6238818e3ec41063444c7d0e8363",
+      "bytes": 901120,
+      "verified_by_both_consumers": true
+    },
+    {
+      "image_sha256": "b7ee962523d2ce2036c09b3b6283bd097b54bbe0e921f36702fe92fdc6b6bed0",
+      "bytes": 901120,
+      "verified_by_both_consumers": true
+    },
+    {
+      "image_sha256": "9cb287f3376ec6b3d681ff794dcd3536c5f0ec21f562ec117e2c13060805558f",
+      "bytes": 901120,
+      "verified_by_both_consumers": true
+    },
+    {
+      "image_sha256": "5a5d9621abc1b3e71d06628136194cd240766a5bddc76a7f460b24bb4f82bcd8",
+      "bytes": 901120,
+      "verified_by_both_consumers": true
+    },
+    {
+      "image_sha256": "5ae75d75b4c96b2eff321e6ae5f2a962ace382b5e8ae088e98329773e74040e6",
+      "bytes": 901120,
+      "verified_by_both_consumers": true
+    }
+  ],
+  "corruption_controls": [
+    {
+      "name": "live-header",
+      "both_verify_exit_codes": 1,
+      "manifest_problems": [
+        "block 882: in use, but the bitmap offers it as free"
+      ]
+    },
+    {
+      "name": "last-real-block",
+      "both_verify_exit_codes": 1,
+      "manifest_problems": [
+        "block 1759: held by the bitmap, but nothing reaches it"
+      ]
+    },
+    {
+      "name": "padding-1760",
+      "both_verify_exit_codes": 1,
+      "manifest_problems": [
+        "bitmap block 884: non-existent block 1760 is marked free"
+      ]
+    },
+    {
+      "name": "padding-1761",
+      "both_verify_exit_codes": 1,
+      "manifest_problems": [
+        "bitmap block 884: non-existent block 1761 is marked free"
+      ]
+    },
+    {
+      "name": "stale-checksum",
+      "both_verify_exit_codes": 1,
+      "manifest_problems": [
+        "block 884 (bitmap, \"/\"): checksum does not match"
+      ]
+    }
+  ],
+  "registry_archive_sha256": "bf0ee8cc91eae302bdd4a07c8e25c3e20933e9158f91f4d66d9fc86dfd0fd8c4",
+  "registry_index_checksum_matches": true,
+  "combined_cli_scope": "Locally built from the reviewed adoption commit; native 0.2.13 archive delivery remains pending.",
+  "standalone_cli_scope": "Installed from the published 0.2.13 registry archive with its lockfile.",
+  "native_archives": "Pending manual-recovery design agreement; automation-created tags did not start a Release run."
+}
