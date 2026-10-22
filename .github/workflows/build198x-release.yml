@@ -39,6 +39,12 @@ permissions:
 # If there's a prerelease-style suffix to the version, then the release(s)
 # will be marked as a prerelease.
 on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing stable build198x or build198x-adf version tag
+        required: true
+        type: string
   pull_request:
   push:
     tags:
@@ -49,9 +55,10 @@ jobs:
   plan:
     runs-on: "ubuntu-22.04"
     outputs:
+      source: ${{ steps.identity.outputs.commit }}
       val: ${{ steps.plan.outputs.manifest }}
-      tag: ${{ !github.event.pull_request && github.ref_name || '' }}
-      tag-flag: ${{ !github.event.pull_request && format('--tag={0}', github.ref_name) || '' }}
+      tag: ${{ !github.event.pull_request && (inputs.release_tag || github.ref_name) || '' }}
+      tag-flag: ${{ !github.event.pull_request && format('--tag={0}', (inputs.release_tag || github.ref_name)) || '' }}
       publishing: ${{ !github.event.pull_request }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,7 +66,22 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
           submodules: recursive
+      - name: Bind the selected release source
+        id: identity
+        shell: bash
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_EVENT" == workflow_dispatch ]]; then
+            [[ "$RELEASE_TAG" =~ ^build198x(-adf)?-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid release tag' >&2; exit 1; }
+            tag_commit=$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")
+            [[ "$tag_commit" == "$(git rev-parse HEAD)" ]] || { echo 'Checkout differs from release tag' >&2; exit 1; }
+          fi
+          printf 'commit=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
@@ -77,7 +99,7 @@ jobs:
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
         run: |
-          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
+          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', (inputs.release_tag || github.ref_name))) || 'plan' }} --output-format=json > plan-dist-manifest.json
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
@@ -119,6 +141,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
           submodules: recursive
       - uses: actions/setup-python@v6
         with:
@@ -182,6 +205,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
           submodules: recursive
       - name: Install cached dist
         uses: actions/download-artifact@v8
@@ -223,6 +247,7 @@ jobs:
       - build-global-artifacts
     uses: ./.github/workflows/test-linux-packages.yml
     with:
+      source_ref: ${{ inputs.release_tag || github.ref }}
       plan: ${{ needs.plan.outputs.val }}
     secrets: inherit
   # Determines if we should publish/announce
@@ -243,6 +268,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
           submodules: recursive
       - name: Install cached dist
         uses: actions/download-artifact@v8
@@ -286,7 +312,7 @@ jobs:
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
           ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
           ANNOUNCEMENT_BODY: "${{ fromJson(steps.host.outputs.manifest).announcement_github_body }}"
-          RELEASE_COMMIT: "${{ github.sha }}"
+          RELEASE_COMMIT: "${{ needs.plan.outputs.source }}"
         run: |
           # Write and read notes from a file to avoid quoting breaking things
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
@@ -323,6 +349,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
           submodules: recursive
 
   custom-notify-discord:
@@ -331,5 +358,6 @@ jobs:
       - announce
     uses: ./.github/workflows/notify-discord.yml
     with:
+      release_tag: ${{ needs.plan.outputs.tag }}
       plan: ${{ needs.plan.outputs.val }}
     secrets: inherit

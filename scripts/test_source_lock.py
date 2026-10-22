@@ -12,13 +12,13 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import tomllib
 import unittest
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import tomllib
 from generate_release_workflow import (
     BUILD,
     GUARDED_BUILD,
@@ -26,6 +26,7 @@ from generate_release_workflow import (
     REQUIRED,
     transform,
 )
+from release_dispatch import REPLACEMENTS
 from source_lock import (
     PACKAGES,
     TARGETS,
@@ -361,8 +362,11 @@ class ProducerTests(unittest.TestCase):
 class WorkflowTests(unittest.TestCase):
     def test_full_generation_transform_and_drift(self) -> None:
         text = (ROOT / ".github/workflows/build198x-release.yml").read_text()
+        original = text
+        for old, new, _ in reversed(REPLACEMENTS):
+            original = original.replace(new, old)
         original = (
-            text.replace(REQUIRED, PERMISSIVE)
+            original.replace(REQUIRED, PERMISSIVE)
             .replace(GUARDED_BUILD, BUILD)
             .replace(
                 "      - uses: actions/setup-python@v6\n        with:\n          python-version: '3.13'\n",

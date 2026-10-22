@@ -29,6 +29,10 @@ name: Notify Discord
 on:
   workflow_call:
     inputs:
+      release_tag:
+        required: false
+        type: string
+        default: ''
       plan:
         description: "The dist manifest for this release, passed by release.yml"
         required: true
@@ -51,7 +55,7 @@ jobs:
           WEBHOOK_ALL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_ALL }}
           REPO: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
