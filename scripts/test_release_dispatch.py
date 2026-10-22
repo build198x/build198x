@@ -3,12 +3,26 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from release_dispatch import IDENTITY_SCRIPT, REPLACEMENTS, add_dispatch
+
+
+def bash_for_git() -> str:
+    if os.name != "nt":
+        return "bash"
+    git = shutil.which("git")
+    if git is None:
+        raise FileNotFoundError("Git is required for dispatch guard tests")
+    for directory in Path(git).resolve().parents:
+        candidate = directory / "bin/bash.exe"
+        if candidate.is_file():
+            return str(candidate)
+    raise FileNotFoundError("Git for Windows Bash is required; WSL is not used")
 
 
 class DispatchTests(unittest.TestCase):
@@ -46,7 +60,7 @@ class DispatchTests(unittest.TestCase):
         self, tag: str, event: str = "workflow_dispatch"
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["bash", "-c", IDENTITY_SCRIPT],
+            [bash_for_git(), "-c", IDENTITY_SCRIPT],
             cwd=self.root,
             env={
                 **os.environ,
