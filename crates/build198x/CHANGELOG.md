@@ -11,10 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- *(adf)* accept native AmigaDOS bitmap slack in both tools
-
-### Fixed
-
 - Accept native AmigaDOS disks with data after the bitmap allocation map.
   Checks still reject damaged checksums, padding bits and block allocations.
 
