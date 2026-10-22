@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.13](https://github.com/build198x/build198x/compare/build198x-v0.2.12...build198x-v0.2.13) - 2026-10-22
+
+### Fixed
+
+- *(adf)* accept native AmigaDOS bitmap slack in both tools
+
 ### Fixed
 
 - Accept native AmigaDOS disks with data after the bitmap allocation map.
