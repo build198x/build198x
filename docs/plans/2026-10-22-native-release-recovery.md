@@ -7,7 +7,8 @@ Do not move or recreate either existing tag.
 1. Extend the checked generator with a required `release_tag` manual input.
    Accept only an existing stable build198x/build198x-adf version tag. Resolve
    its commit after checkout and require it to match HEAD before release work.
-2. Use that tag for all five generated source checkouts and dist commands.
+2. Resolve that tag once in the plan, then use its immutable commit for all
+   downstream source checkouts. Dist commands retain the selected tag.
    Pass the source ref to the reusable package qualification workflow so its
    checks compare the same source/lock. Pass the selected tag to notifications;
    the dispatcher branch is not the released source or announcement tag.
