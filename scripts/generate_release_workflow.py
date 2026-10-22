@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from release_dispatch import add_dispatch
+
 WORKFLOW = Path(".github/workflows/build198x-release.yml")
 PERMISSIVE = "(needs.custom-test-linux-packages.result == 'skipped' || needs.custom-test-linux-packages.result == 'success')"
 REQUIRED = "(needs.custom-test-linux-packages.result == 'success')"
@@ -25,7 +27,7 @@ def transform(text: str) -> str:
             raise ValueError(
                 "cargo-dist template changed; review producer/publication guards"
             )
-    return (
+    return add_dispatch(
         text.replace(PERMISSIVE, REQUIRED)
         .replace(dependency, dependency + "      - build-global-artifacts\n")
         .replace(BUILD, GUARDED_BUILD)

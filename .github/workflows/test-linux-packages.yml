@@ -33,12 +33,16 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
+      source_ref:
+        required: false
+        type: string
+        default: ''
       plan:
         required: true
         type: string
 
 concurrency:
-  group: candidate-packages-${{ github.workflow }}-${{ github.ref }}
+  group: candidate-packages-${{ github.workflow }}-${{ inputs.source_ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -72,6 +76,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          ref: ${{ inputs.source_ref || github.ref }}
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
@@ -91,6 +96,9 @@ jobs:
           if (-not $version) { throw 'Missing pinned cargo-dist version' }
           Invoke-WebRequest "https://github.com/axodotdev/cargo-dist/releases/download/v$version/cargo-dist-installer.ps1" -OutFile "$env:RUNNER_TEMP/install-dist.ps1"
           & "$env:RUNNER_TEMP/install-dist.ps1"
+      - name: Check manual dispatch guards
+        if: inputs.plan == ''
+        run: python scripts/test_release_dispatch.py
       - name: Check regeneration and rejection controls
         shell: bash
         run: |
