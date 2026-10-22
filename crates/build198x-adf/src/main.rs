@@ -78,7 +78,15 @@ fn manifest_json(img: &[u8]) -> Result<String, String> {
     let geometry = disk.geometry();
     let entries = recursive_entries(&disk)?;
     let report = disk.check();
-    let hash = format!("{:x}", Sha256::digest(img));
+    // sha2 0.11's digest no longer implements LowerHex; format the bytes.
+    let hash: String =
+        Sha256::digest(img)
+            .iter()
+            .fold(String::with_capacity(64), |mut hex, byte| {
+                hex.push(char::from_digit(u32::from(byte >> 4), 16).unwrap_or('0'));
+                hex.push(char::from_digit(u32::from(byte & 0xf), 16).unwrap_or('0'));
+                hex
+            });
     let mut out = format!(
         "{{\"schema\":\"{ADF_MANIFEST_SCHEMA}\",\"cli_version\":\"{}\",\"library\":{{\"name\":\"format198x-commodore-amiga-adf\",\"version\":\"{FORMAT198X_ADF_VERSION}\"}},\"disk\":{{\"sha256\":\"{hash}\",\"bytes\":{},\"geometry\":{{\"cylinders\":{},\"heads\":{},\"sectors_per_track\":{},\"blocks\":{}}},\"filesystem\":\"{}\",\"label\":\"{}\"}},\"boot\":{{\"checksum_valid\":{}}},\"root\":{{\"block\":{},\"bitmap_valid_flag\":{},\"bitmap_blocks\":{},\"bitmap_extension\":{}}},\"entries\":[",
         env!("CARGO_PKG_VERSION"),
