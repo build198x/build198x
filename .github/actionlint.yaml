@@ -1,0 +1,16 @@
+# actionlint reads this file by default; the family's shared CI runs it on
+# every workflow. Run `actionlint` from the repository root locally; with
+# shellcheck 0.11.0 installed it also checks every `run:` script.
+paths:
+  # dist generates build198x-release.yml (`dist generate`), and the hand-added steps
+  # live alongside its output. These shellcheck findings are all in dist's
+  # generated lines: an unquoted $GITHUB_PATH and $RUNNER_TEMP, a flag left
+  # unquoted so an empty value disappears, separate redirects into
+  # $GITHUB_OUTPUT, and a sed for a suffix. Rewriting them would make the next
+  # regeneration harder to review, so they stay as dist ships them, as in
+  # emu198x's .github/actionlint.yaml.
+  .github/workflows/build198x-release.yml:
+    ignore:
+      - 'SC2086:'
+      - 'SC2129:'
+      - 'SC2001:'
