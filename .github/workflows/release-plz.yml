@@ -26,3 +26,7 @@ jobs:
       DISCORD_RELEASE_WEBHOOK_ALL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_ALL }}
     with:
       announce: true
+      # The CLI and build198x-adf ship binaries, so cargo-dist's release
+      # announces them (notify-discord.yml). Announcing them here as well
+      # posted each release twice.
+      announce-skip: build198x build198x-adf
