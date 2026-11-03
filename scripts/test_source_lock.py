@@ -422,8 +422,20 @@ class WorkflowTests(unittest.TestCase):
             "metadata"
         ]["dist"]
         text = (ROOT / ".github/workflows/test-linux-packages.yml").read_text()
-        matrix = re.findall(r"^            target: ([\w-]+)$", text, re.MULTILINE)
-        self.assertEqual(sorted(matrix), sorted(TARGETS))
+        # The matrix picks a list by event: every target for a release or a
+        # manual run, the Linux targets alone for pull requests and main.
+        release, linux_only = (
+            [entry["target"] for entry in json.loads(found)]
+            for found in re.findall(r"'(\[\{.*\}\])'", text)
+        )
+        self.assertIn(
+            "fromJSON((inputs.plan || github.event_name == 'workflow_dispatch')", text
+        )
+        self.assertEqual(sorted(release), sorted(TARGETS))
+        self.assertEqual(
+            sorted(linux_only),
+            sorted(target for target in TARGETS if target.endswith("-linux-gnu")),
+        )
         self.assertEqual(sorted(config["targets"]), sorted(TARGETS))
         self.assertIn('python scripts/source_lock.py build "$PACKAGE_TARGET"', text)
         self.assertIn('python scripts/source_lock.py verify "$PACKAGE_TARGET"', text)
