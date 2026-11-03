@@ -39,6 +39,17 @@ def main() -> None:
         if Path(name).name != name or not (dist / name).is_file():
             raise SystemExit(f"Missing generated formula: {name}")
     run("brew", "tap-new", "--no-git", "198x/package-test")
+    # Homebrew refuses a formula from a tap it has not been told to trust.
+    # This tap is the one just made, on a disposable runner, and holds only
+    # this build's formulae. A Homebrew too old to know `trust` checks none.
+    trusted = subprocess.run(
+        ["brew", "trust", "198x/package-test"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if trusted.returncode != 0 and "Unknown command" not in trusted.stderr:
+        raise SystemExit(f"Could not trust the package-test tap:\n{trusted.stderr}")
     tap = (
         Path(
             run(
