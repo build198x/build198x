@@ -149,9 +149,9 @@ checksum = "0f77fe6fb0505090e8f5a39b2968cd0ffc7c3ae5e86d0bd3f670e7b48ba0ba9a"
 
 [[package]]
 name = "format198x-commodore-amiga-adf"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c4569cb4196025141d21f88d23f587a857c094cda82b2f6f656a9b8f433f544"
+checksum = "b262cf6711879576d99e337e2cb36ce5c97261b16d7247cf1129b5e2fc11d64e"
 
 [[package]]
 name = "format198x-commodore-amiga-ilbm"

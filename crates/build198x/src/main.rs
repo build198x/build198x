@@ -1374,8 +1374,8 @@ fn adf_take_format(args: &[String]) -> Result<(AdfFormat, Vec<String>), String> 
     Ok((fmt, rest))
 }
 
-/// `build198x adf` — master, verify, or inspect a bootable Amiga ADF. A leading
-/// `master`/`verify`/`info` selects the verb; a bare exe is an implicit master,
+/// `build198x adf` — master, create, verify, inspect, or extract from an Amiga ADF.
+/// A leading `master`/`create`/`verify`/`info`/`extract` selects the verb; a bare exe is an implicit master,
 /// preserving the pre-verb `build198x adf <exe> -o <out.adf>` interface.
 fn adf_command(args: &[String]) -> ExitCode {
     match args.first().map(String::as_str) {
@@ -1387,6 +1387,7 @@ fn adf_command(args: &[String]) -> ExitCode {
         Some("create") => adf_create(&args[1..]),
         Some("verify") => adf_verify(&args[1..]),
         Some("info") => adf_info(&args[1..]),
+        Some("extract") => adf_extract(&args[1..]),
         _ => adf_dispatch_master(args),
     }
 }
@@ -1829,6 +1830,146 @@ fn adf_info_json(
 
 // --- create: the general Volume builder ---
 
+/// `build198x adf extract <disk.adf> <amiga-path> -o <host-path> [--force]` — copy one file's
+/// exact bytes out of an ADF. The source image is only ever read.
+fn adf_extract(args: &[String]) -> ExitCode {
+    let (fmt, rest) = match adf_take_format(args) {
+        Ok(v) => v,
+        Err(e) => return adf_verb_arg_error("extract", &e),
+    };
+
+    let mut positional: Vec<&String> = Vec::new();
+    let mut out_path: Option<&String> = None;
+    let mut force = false;
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--help" | "-h" => {
+                println!("{}", adf_verb_usage("extract"));
+                return ExitCode::SUCCESS;
+            }
+            "--force" => force = true,
+            "-o" | "--output" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => out_path = Some(v),
+                    None => return adf_verb_arg_error("extract", "-o needs a path"),
+                }
+            }
+            other if other.starts_with('-') => {
+                return adf_verb_arg_error("extract", &format!("unknown flag `{other}`"));
+            }
+            _ => positional.push(&rest[i]),
+        }
+        i += 1;
+    }
+    let [disk_path, amiga_path] = positional[..] else {
+        return adf_verb_arg_error("extract", "expected <disk.adf> <amiga-path>");
+    };
+    let Some(out_path) = out_path else {
+        return adf_verb_arg_error("extract", "no output path given (-o <host-path>)");
+    };
+
+    let img = match adf_read_disk(disk_path) {
+        Ok(b) => b,
+        Err(code) => return code,
+    };
+    let out = Path::new(out_path);
+    if let Err(e) = adf_check_extract_destination(Path::new(disk_path), out, force) {
+        eprintln!("build198x adf: {e}");
+        return ExitCode::from(1);
+    }
+    let extracted = match adf_extract_file(&img, amiga_path) {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!("build198x adf: {disk_path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    if let Err(e) = write_atomic(out, &extracted.bytes) {
+        eprintln!("build198x adf: {e}");
+        return ExitCode::from(1);
+    }
+
+    let line = match fmt {
+        AdfFormat::Text => format!(
+            "{out_path}: {} from {disk_path}:{} ({})",
+            adf_plural(extracted.bytes.len(), "byte"),
+            extracted.resolved,
+            extracted.fs.name().to_uppercase(),
+        ),
+        AdfFormat::Json => format!(
+            "{{\"tool\":\"adf\",\"command\":\"extract\",\"input\":\"{}\",\"path\":\"{}\",\"resolved\":\"{}\",\"output\":\"{}\",\"filesystem\":\"{}\",\"bytes\":{}}}",
+            json_escape(disk_path),
+            json_escape(amiga_path),
+            json_escape(&extracted.resolved),
+            json_escape(out_path),
+            extracted.fs.name(),
+            extracted.bytes.len(),
+        ),
+    };
+    println!("{line}");
+    ExitCode::SUCCESS
+}
+
+/// One file read out of a disk, with the spelling AmigaDOS resolved it to.
+struct AdfExtracted {
+    resolved: String,
+    fs: adf::FileSystem,
+    bytes: Vec<u8>,
+}
+
+/// Resolve `amiga_path` on the disk the way AmigaDOS does (case-insensitively)
+/// and read the file it names. Directories, the root, and anything the
+/// library reports as missing or corrupt are errors.
+fn adf_extract_file(img: &[u8], amiga_path: &str) -> Result<AdfExtracted, String> {
+    let disk = adf::Disk::open(img).map_err(|e| e.to_string())?;
+    let provenance = disk.inspect(amiga_path).map_err(|e| e.to_string())?;
+    if provenance.file.is_none() {
+        return Err(format!("`{amiga_path}` is a directory, not a file"));
+    }
+    let resolved = provenance
+        .components
+        .iter()
+        .map(|c| c.stored_name.as_str())
+        .collect::<Vec<_>>()
+        .join("/");
+    let bytes = disk.read(amiga_path).map_err(|e| e.to_string())?;
+    Ok(AdfExtracted {
+        resolved,
+        fs: disk.filesystem(),
+        bytes,
+    })
+}
+
+/// Refuse to replace an existing file unless `--force` was given, and never
+/// write over the disk being read, even with it.
+fn adf_check_extract_destination(disk: &Path, out: &Path, force: bool) -> Result<(), String> {
+    if !out.exists() {
+        return Ok(());
+    }
+    if out.is_dir() {
+        return Err(format!("{} is a directory", out.display()));
+    }
+    let same = match (disk.canonicalize(), out.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    if same {
+        return Err(format!(
+            "{} is the disk being read; extract to another path",
+            out.display()
+        ));
+    }
+    if !force {
+        return Err(format!(
+            "{} already exists; pass --force to replace it",
+            out.display()
+        ));
+    }
+    Ok(())
+}
+
 fn adf_create(args: &[String]) -> ExitCode {
     let (fmt, rest) = match adf_take_format(args) {
         Ok(v) => v,
@@ -2233,7 +2374,8 @@ fn adf_usage() -> String {
          \x20 {name} adf master <exe> -o <out.adf> [flags]  master a hunk exe into a bootable disk\n\
          \x20 {name} adf create <out.adf> [flags]           build a volume from files and dirs\n\
          \x20 {name} adf verify <disk.adf>                  check an ADF's integrity\n\
-         \x20 {name} adf info <disk.adf>                     show label, filesystem, and contents\n\n\
+         \x20 {name} adf info <disk.adf>                     show label, filesystem, and contents\n\
+         \x20 {name} adf extract <disk.adf> <path> -o <out>  copy one file's bytes out of a disk\n\n\
          Every verb takes --format text|json (default text). Run\n\
          `{name} adf <verb> --help` for a verb's own options."
     )
@@ -2285,6 +2427,18 @@ fn adf_verb_usage(verb: &str) -> String {
              usage:\n\
              \x20 {name} adf verify <disk.adf> [--format text|json]\n\n\
              Exits 0 if the disk is sound, 1 if it is corrupt or not an ADF."
+        ),
+        "extract" => format!(
+            "{name} adf extract — copy one file's exact bytes out of an ADF\n\n\
+             usage:\n\
+             \x20 {name} adf extract <disk.adf> <amiga-path> -o <host-path> [--force]\n\n\
+             <amiga-path> is slash-separated and matched as AmigaDOS matches names,\n\
+             ignoring case. The disk is only read. An existing <host-path> is kept\n\
+             unless --force is given, and is replaced atomically when it is.\n\n\
+             options:\n\
+             \x20 -o, --output <path>   the host file to write (required)\n\
+             \x20 --force              replace an existing host file\n\
+             \x20 --format <fmt>       output format: text (default) or json"
         ),
         "info" => format!(
             "{name} adf info — show an ADF's label, filesystem, and root listing\n\n\

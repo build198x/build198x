@@ -9,6 +9,7 @@
 //! build198x-adf create <out.adf> [--add host=dest]... [--mkdir dir]... [flags]  # general volume builder
 //! build198x-adf verify <disk.adf>                                              # integrity check
 //! build198x-adf info   <disk.adf> [--recursive]                                # label, fs, contents
+//! build198x-adf extract <disk.adf> <amiga-path> -o <host-path> [--force]       # copy one file out
 //! build198x-adf manifest <disk.adf>                                             # canonical provenance JSON
 //! ```
 //!
@@ -43,6 +44,7 @@ fn run(args: &[String]) -> ExitCode {
         Some("create") => cmd_create(&args[1..]),
         Some("verify") => cmd_verify(&args[1..]),
         Some("info") => cmd_info(&args[1..]),
+        Some("extract") => cmd_extract(&args[1..]),
         Some("manifest" | "inspect") => cmd_manifest(&args[1..]),
         _ => cmd_master(args),
     }
@@ -675,6 +677,150 @@ fn info_json(
 }
 
 // ---------------------------------------------------------------------------
+// extract
+// ---------------------------------------------------------------------------
+
+/// `extract <disk.adf> <amiga-path> -o <host-path> [--force]` — copy one file's
+/// exact bytes out of an ADF. The source image is only ever read.
+fn cmd_extract(args: &[String]) -> ExitCode {
+    let (fmt, rest) = match take_format(args) {
+        Ok(v) => v,
+        Err(e) => return verb_arg_error("extract", &e),
+    };
+
+    let mut positional: Vec<&String> = Vec::new();
+    let mut out_path: Option<&String> = None;
+    let mut force = false;
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--help" | "-h" => {
+                println!("{}", verb_usage("extract"));
+                return ExitCode::SUCCESS;
+            }
+            "--force" => force = true,
+            "-o" | "--output" => {
+                i += 1;
+                match rest.get(i) {
+                    Some(v) => out_path = Some(v),
+                    None => return verb_arg_error("extract", "-o needs a path"),
+                }
+            }
+            other if other.starts_with('-') => {
+                return verb_arg_error("extract", &format!("unknown flag `{other}`"));
+            }
+            _ => positional.push(&rest[i]),
+        }
+        i += 1;
+    }
+    let [disk_path, amiga_path] = positional[..] else {
+        return verb_arg_error("extract", "expected <disk.adf> <amiga-path>");
+    };
+    let Some(out_path) = out_path else {
+        return verb_arg_error("extract", "no output path given (-o <host-path>)");
+    };
+
+    let img = match read_bytes(disk_path) {
+        Ok(b) => b,
+        Err(code) => return code,
+    };
+    let out = Path::new(out_path);
+    if let Err(e) = check_extract_destination(Path::new(disk_path), out, force) {
+        eprintln!("build198x-adf: {e}");
+        return ExitCode::from(1);
+    }
+    let extracted = match extract_file(&img, amiga_path) {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!("build198x-adf: {disk_path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    if let Err(e) = write_atomic(out, &extracted.bytes) {
+        eprintln!("build198x-adf: {e}");
+        return ExitCode::from(1);
+    }
+
+    let line = match fmt {
+        Format::Text => format!(
+            "{out_path}: {} from {disk_path}:{} ({})",
+            plural(extracted.bytes.len(), "byte"),
+            extracted.resolved,
+            extracted.fs.name().to_uppercase(),
+        ),
+        Format::Json => format!(
+            "{{\"tool\":\"adf\",\"command\":\"extract\",\"input\":\"{}\",\"path\":\"{}\",\"resolved\":\"{}\",\"output\":\"{}\",\"filesystem\":\"{}\",\"bytes\":{}}}",
+            json_escape(disk_path),
+            json_escape(amiga_path),
+            json_escape(&extracted.resolved),
+            json_escape(out_path),
+            extracted.fs.name(),
+            extracted.bytes.len(),
+        ),
+    };
+    println!("{line}");
+    ExitCode::SUCCESS
+}
+
+/// One file read out of a disk, with the spelling AmigaDOS resolved it to.
+struct Extracted {
+    resolved: String,
+    fs: FileSystem,
+    bytes: Vec<u8>,
+}
+
+/// Resolve `amiga_path` on the disk the way AmigaDOS does (case-insensitively)
+/// and read the file it names. Directories, the root, and anything the
+/// library reports as missing or corrupt are errors.
+fn extract_file(img: &[u8], amiga_path: &str) -> Result<Extracted, String> {
+    let disk = Disk::open(img).map_err(|e| e.to_string())?;
+    let provenance = disk.inspect(amiga_path).map_err(|e| e.to_string())?;
+    if provenance.file.is_none() {
+        return Err(format!("`{amiga_path}` is a directory, not a file"));
+    }
+    let resolved = provenance
+        .components
+        .iter()
+        .map(|c| c.stored_name.as_str())
+        .collect::<Vec<_>>()
+        .join("/");
+    let bytes = disk.read(amiga_path).map_err(|e| e.to_string())?;
+    Ok(Extracted {
+        resolved,
+        fs: disk.filesystem(),
+        bytes,
+    })
+}
+
+/// Refuse to replace an existing file unless `--force` was given, and never
+/// write over the disk being read, even with it.
+fn check_extract_destination(disk: &Path, out: &Path, force: bool) -> Result<(), String> {
+    if !out.exists() {
+        return Ok(());
+    }
+    if out.is_dir() {
+        return Err(format!("{} is a directory", out.display()));
+    }
+    let same = match (disk.canonicalize(), out.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    if same {
+        return Err(format!(
+            "{} is the disk being read; extract to another path",
+            out.display()
+        ));
+    }
+    if !force {
+        return Err(format!(
+            "{} already exists; pass --force to replace it",
+            out.display()
+        ));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // create — the general Volume builder
 // ---------------------------------------------------------------------------
 
@@ -1095,6 +1241,7 @@ fn top_usage() -> String {
      \x20 build198x-adf create <out.adf> [flags]           build a volume from files and dirs\n\
      \x20 build198x-adf verify <disk.adf>                  check an ADF's integrity\n\
      \x20 build198x-adf info <disk.adf> [--recursive]       show label, filesystem, and contents\n\
+     \x20 build198x-adf extract <disk.adf> <path> -o <out>  copy one file's bytes out of a disk\n\
      \x20 build198x-adf manifest <disk.adf>                 emit canonical provenance JSON\n\n\
      Every verb takes --format text|json (default text). Run `<verb> --help`\n\
      for the verb's own options."
@@ -1126,6 +1273,17 @@ fn verb_usage(verb: &str) -> String {
         "info" => "build198x-adf info — show an ADF's label, filesystem, and contents\n\n\
              Usage:\n\
              \x20 build198x-adf info <disk.adf> [--recursive] [--format text|json]"
+            .to_owned(),
+        "extract" => "build198x-adf extract — copy one file's exact bytes out of an ADF\n\n\
+             Usage:\n\
+             \x20 build198x-adf extract <disk.adf> <amiga-path> -o <host-path> [--force]\n\n\
+             <amiga-path> is slash-separated and matched as AmigaDOS matches names,\n\
+             ignoring case. The disk is only read. An existing <host-path> is kept\n\
+             unless --force is given, and is replaced atomically when it is.\n\n\
+             Options:\n\
+             \x20 -o, --output <path>   the host file to write (required)\n\
+             \x20     --force          replace an existing host file\n\
+             \x20     --format <fmt>   output format: text (default) or json"
             .to_owned(),
         "manifest" => "build198x-adf manifest — emit canonical ADF provenance JSON\n\n\
              USAGE:\n\
