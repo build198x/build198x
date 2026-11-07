@@ -14,6 +14,10 @@
 //! numbered BASIC listing into the file its machine loads, using the
 //! Format198x tokenisers: a Spectrum `.tap` or a C64 `.prg`.
 //!
+//! The [`tape`] module (opened by `decisions/demand-gate-tape-master.md`)
+//! masters a loader, a loading screen and a program onto one tape, one
+//! submodule per machine; the ZX Spectrum's writes a `.tap`.
+//!
 //! Module layout and dependency discipline follow
 //! `decisions/module-and-crate-naming.md`: codec modules mirror the crate
 //! names they would become if a second consumer makes a split real, and
@@ -25,3 +29,4 @@ pub mod beeper;
 pub mod convert;
 pub mod format;
 pub mod plus3;
+pub mod tape;

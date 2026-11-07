@@ -11,6 +11,7 @@ build198x adf    create <out.adf> [flags]                  # files + directories
 build198x adf    <program> -o <out.adf>                    # hunk executable → bootable Amiga disk
 build198x basic  <in.bas> --machine <id> -o <out>          # numbered BASIC listing → tape or PRG
 build198x basic  lint <in.bas>... --machine <id> [--fix]   # check (and mend) a listing against its listed form
+build198x tape   --machine <id> --code <bin> --load-address <n> -o <out.tap>  # loader + loading screen + program → one tape
 ```
 
 ## The tools
@@ -23,9 +24,9 @@ build198x basic  lint <in.bas>... --machine <id> [--fix]   # check (and mend) a 
 
 **`basic`** — turns a numbered BASIC listing into the file its machine loads: a self-starting ZX Spectrum `.tap`, or a Commodore 64 `.prg` at `$0801`. `basic lint` checks (and, with `--fix`, mends) a listing against the *listed form* — see [BASIC listings](#basic-listings) below. First consumer: Code198x's ~170 BASIC lesson pages, which had a listing but nothing to run.
 
-Each tool opened on a named concrete need (the demand gate): see [`decisions/demand-gate-opening.md`](decisions/demand-gate-opening.md), [`decisions/demand-gate-beeper-phrases.md`](decisions/demand-gate-beeper-phrases.md), [`decisions/demand-gate-adf-master.md`](decisions/demand-gate-adf-master.md), and [`decisions/demand-gate-basic.md`](decisions/demand-gate-basic.md).
+**`tape`** — masters a loader, a loading screen and a program onto one tape for the named machine. On the ZX Spectrum (`--machine sinclair-zx-spectrum`) that is a `.tap` of an auto-running BASIC loader, a SCREEN$ and the CODE, the commercial cassette shape of 1983–84. The loader is generated, so the tool can check that the CODE fits the 16K or 48K model, that the entry lies inside it, and that it sits high enough for the loader to `CLEAR` and `LOAD` beneath it. `--basic` uses your own loader instead, and `--screen` your own art (a built-in test card stands in until there is some). A program that is only itself on tape is Asm198x's to frame; the moment a second artifact joins it, the tape is mastered here. First consumer: Meteor Storm's tape, which `build198x tape --basic` reproduces byte for byte.
 
-The Spectrum **tape master** (`.tap`: BASIC loader + SCREEN$ + CODE) is planned but not implemented. Its [demand gate](decisions/demand-gate-tape-master.md) assigns composed tapes to Build198x; Asm198x retains single-program tape framing. Ownership is settled; the tool still needs to be built.
+Each tool opened on a named concrete need (the demand gate): see [`decisions/demand-gate-opening.md`](decisions/demand-gate-opening.md), [`decisions/demand-gate-beeper-phrases.md`](decisions/demand-gate-beeper-phrases.md), [`decisions/demand-gate-adf-master.md`](decisions/demand-gate-adf-master.md), [`decisions/demand-gate-basic.md`](decisions/demand-gate-basic.md), and [`decisions/demand-gate-tape-master.md`](decisions/demand-gate-tape-master.md).
 
 ## Homebrew
 
