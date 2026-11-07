@@ -104,6 +104,12 @@ post-announce-jobs = ["./notify-discord"]
 runner = "ubuntu-22.04-arm"
 host = "aarch64-unknown-linux-gnu"
 
+# macOS 14 runners retired on 2026-11-02; keep native Apple Silicon builds
+# on the stable macOS 15 host, matching the family's Asm198x configuration.
+[workspace.metadata.dist.github-custom-runners.aarch64-apple-darwin]
+runner = "macos-15"
+host = "aarch64-apple-darwin"
+
 [profile.dist]
 inherits = "release"
 lto = "thin"

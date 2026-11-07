@@ -12,18 +12,20 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 import unittest
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-import tomllib
 from generate_release_workflow import (
     BUILD,
     GUARDED_BUILD,
     PERMISSIVE,
+    RECOVERY_RUNNER,
     REQUIRED,
+    RUNNER,
     transform,
 )
 from release_dispatch import REPLACEMENTS
@@ -360,6 +362,31 @@ class ProducerTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_retired_runner_recovery_preserves_other_hosts(self) -> None:
+        text = (ROOT / ".github/workflows/build198x-release.yml").read_text()
+        local = text.split("\n  build-local-artifacts:\n")[1].split(
+            "\n  build-global-artifacts:"
+        )[0]
+        expression = re.search(r"^    runs-on: \$\{\{ (.*) \}\}$", local, re.MULTILINE)[
+            1
+        ]
+        expression = (
+            expression.replace("matrix.runner", "runner")
+            .replace("&&", "and")
+            .replace("||", "or")
+        )
+        for runner, expected in [
+            ("macos-14", "macos-15"),
+            ("macos-15", "macos-15"),
+            ("macos-15-intel", "macos-15-intel"),
+            ("ubuntu-22.04", "ubuntu-22.04"),
+            ("ubuntu-22.04-arm", "ubuntu-22.04-arm"),
+            ("windows-2022", "windows-2022"),
+        ]:
+            self.assertEqual(
+                eval(expression, {"__builtins__": {}}, {"runner": runner}), expected
+            )
+
     def test_full_generation_transform_and_drift(self) -> None:
         text = (ROOT / ".github/workflows/build198x-release.yml").read_text()
         original = text
@@ -367,6 +394,7 @@ class WorkflowTests(unittest.TestCase):
             original = original.replace(new, old)
         original = (
             original.replace(REQUIRED, PERMISSIVE)
+            .replace(RECOVERY_RUNNER, RUNNER)
             .replace(GUARDED_BUILD, BUILD)
             .replace(
                 "      - uses: actions/setup-python@v6\n        with:\n          python-version: '3.13'\n",
@@ -385,6 +413,7 @@ class WorkflowTests(unittest.TestCase):
         for bad in (
             text,
             original.replace(BUILD, "changed upstream build"),
+            original.replace(RUNNER, "changed upstream runner"),
             original + PERMISSIVE,
         ):
             with self.assertRaises(ValueError):
