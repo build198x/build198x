@@ -1401,7 +1401,8 @@ fn adf_dispatch_master(args: &[String]) -> ExitCode {
 }
 
 /// `build198x adf [master] <exe> -o <out.adf> [--volume <label>] [--name <file>]`
-/// — master a Kickstart-1.x hunk executable into a bootable OFS DD floppy. The
+/// — master a Kickstart-1.x hunk executable into a bootable floppy (OFS DD unless
+/// `--ffs`/`--hd` say otherwise). The
 /// argument list is already `--format`-stripped by the dispatcher.
 fn adf_master(args: &[String], fmt: AdfFormat) -> ExitCode {
     let mut exe_path: Option<&String> = None;
@@ -1410,6 +1411,7 @@ fn adf_master(args: &[String], fmt: AdfFormat) -> ExitCode {
     let mut name: Option<String> = None;
     let mut protect = 0;
     let mut fs = adf::FileSystem::Ofs;
+    let mut geometry = adf::DD;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -1419,6 +1421,8 @@ fn adf_master(args: &[String], fmt: AdfFormat) -> ExitCode {
             }
             "--ffs" => fs = adf::FileSystem::Ffs,
             "--ofs" => fs = adf::FileSystem::Ofs,
+            "--dd" => geometry = adf::DD,
+            "--hd" => geometry = adf::HD,
             "-o" | "--output" => {
                 i += 1;
                 match args.get(i) {
@@ -1494,7 +1498,7 @@ fn adf_master(args: &[String], fmt: AdfFormat) -> ExitCode {
         }
     });
 
-    let img = match adf_assemble_master(&exe, &name, &volume, fs, protect) {
+    let img = match adf_assemble_master(&exe, &name, &volume, fs, geometry, protect) {
         Ok(img) => img,
         Err(e) => {
             eprintln!("build198x adf: {e}");
@@ -1520,9 +1524,11 @@ fn adf_assemble_master(
     name: &str,
     label: &str,
     fs: adf::FileSystem,
+    geometry: adf::Geometry,
     protect: u32,
 ) -> Result<Vec<u8>, adf::Error> {
     let mut volume = adf::Volume::new(label, fs);
+    volume.set_geometry(geometry);
     volume.add_file("s/startup-sequence", format!("{name}\n").as_bytes())?;
     volume.add_file_with_protection(name, exe, protect)?;
     volume.set_bootable(true);
@@ -1837,6 +1843,7 @@ fn adf_create(args: &[String]) -> ExitCode {
     let mut bootable = false;
     let mut startup: Option<String> = None;
     let mut fs = adf::FileSystem::Ofs;
+    let mut geometry = adf::DD;
 
     let mut i = 0;
     while i < rest.len() {
@@ -1847,6 +1854,8 @@ fn adf_create(args: &[String]) -> ExitCode {
             }
             "--ffs" => fs = adf::FileSystem::Ffs,
             "--ofs" => fs = adf::FileSystem::Ofs,
+            "--dd" => geometry = adf::DD,
+            "--hd" => geometry = adf::HD,
             "--bootable" => bootable = true,
             "--label" => {
                 i += 1;
@@ -1921,6 +1930,7 @@ fn adf_create(args: &[String]) -> ExitCode {
     let img = match adf_build_volume(
         &label,
         fs,
+        geometry,
         bootable,
         &mkdirs,
         &adds,
@@ -2046,9 +2056,11 @@ fn adf_default_label(out_path: &str) -> String {
 }
 
 /// Read each host file and assemble the volume; any failure maps to `exit 1`.
+#[allow(clippy::too_many_arguments)] // One parameter per `adf create` option.
 fn adf_build_volume(
     label: &str,
     fs: adf::FileSystem,
+    geometry: adf::Geometry,
     bootable: bool,
     mkdirs: &[String],
     adds: &[(String, String)],
@@ -2065,7 +2077,16 @@ fn adf_build_volume(
             }
         }
     }
-    match adf_assemble_volume(label, fs, bootable, mkdirs, &files, protections, startup) {
+    match adf_assemble_volume(
+        label,
+        fs,
+        geometry,
+        bootable,
+        mkdirs,
+        &files,
+        protections,
+        startup,
+    ) {
         Ok(img) => Ok(img),
         Err(e) => {
             eprintln!("build198x adf: {e}");
@@ -2076,9 +2097,11 @@ fn adf_build_volume(
 
 /// Build an ADF image from in-memory contents — pure over the library `Volume`,
 /// so it is unit-testable without touching the disk.
+#[allow(clippy::too_many_arguments)] // One parameter per `adf create` option.
 fn adf_assemble_volume(
     label: &str,
     fs: adf::FileSystem,
+    geometry: adf::Geometry,
     bootable: bool,
     mkdirs: &[String],
     files: &[(String, Vec<u8>)],
@@ -2086,6 +2109,7 @@ fn adf_assemble_volume(
     startup: Option<&str>,
 ) -> Result<Vec<u8>, adf::Error> {
     let mut vol = adf::Volume::new(label, fs);
+    vol.set_geometry(geometry);
     vol.set_bootable(bootable);
     for d in mkdirs {
         vol.add_dir(d)?;
@@ -2219,10 +2243,11 @@ fn adf_master_usage() -> String {
     format!(
         "{name} adf master — master a hunk executable into a bootable Amiga floppy\n\n\
          usage:\n\
-         \x20 {name} adf [master] <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs]\n\n\
-         Writes an 880K DD `.adf` that boots straight into the program. OFS is\n\
-         the default (boots on a bare A500/KS1.3); --ffs is denser but needs\n\
-         KS2.0+. Deterministic (zeroed dates) — byte-stable output.\n\n\
+         \x20 {name} adf [master] <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs] [--hd]\n\n\
+         Writes an `.adf` that boots straight into the program. OFS is the\n\
+         default (boots on a bare A500/KS1.3); --ffs is denser but needs\n\
+         KS2.0+. The disk is an 880K DD floppy unless --hd asks for a 1760K\n\
+         one, which needs an HD drive. Deterministic (zeroed dates) — byte-stable output.\n\n\
          options:\n\
          \x20 -o, --output <path>   the .adf to write (required)\n\
          \x20 --volume <label>      disk label (default: capitalised file name)\n\
@@ -2230,6 +2255,7 @@ fn adf_master_usage() -> String {
          \x20                       (default: the executable's basename)\n\
          \x20 --protect <rwed>      executable permissions (default: rwed)\n\
          \x20 --ofs | --ffs         filesystem (default: --ofs; --ffs needs KS2.0+)\n\
+         \x20 --dd | --hd           density (default: --dd, 880K; --hd is 1760K, needs an HD drive)\n\
          \x20 --format <fmt>        output format: text (default) or json",
         name = env!("CARGO_PKG_NAME")
     )
@@ -2251,6 +2277,7 @@ fn adf_verb_usage(verb: &str) -> String {
              \x20 --bootable           write a boot block (default: not bootable)\n\
              \x20 --startup <cmd>      write s/startup-sequence running <cmd> (implies --bootable)\n\
              \x20 --ofs | --ffs        filesystem (default: --ofs; --ffs needs KS2.0+)\n\
+             \x20 --dd | --hd          density (default: --dd, 880K; --hd is 1760K, needs an HD drive)\n\
              \x20 --format <fmt>       output format: text (default) or json"
         ),
         "verify" => format!(
@@ -2968,6 +2995,7 @@ mod tests {
         let img = adf_assemble_volume(
             "MyGame",
             adf::FileSystem::Ofs,
+            adf::DD,
             true,
             &["data".to_owned()],
             &[
@@ -2989,8 +3017,17 @@ mod tests {
 
     #[test]
     fn adf_assemble_empty_disk_is_valid() {
-        let img =
-            adf_assemble_volume("Blank", adf::FileSystem::Ofs, false, &[], &[], &[], None).unwrap();
+        let img = adf_assemble_volume(
+            "Blank",
+            adf::FileSystem::Ofs,
+            adf::DD,
+            false,
+            &[],
+            &[],
+            &[],
+            None,
+        )
+        .unwrap();
         let disk = adf::Disk::open(&img).unwrap();
         disk.verify().unwrap();
         assert_eq!(disk.label(), "Blank");
@@ -3024,7 +3061,8 @@ mod tests {
     fn adf_default_master_remains_byte_identical_to_the_library_helper() {
         let expected = adf::master_fs(b"hunk", "program", "Disk", adf::FileSystem::Ofs).unwrap();
         assert_eq!(
-            adf_assemble_master(b"hunk", "program", "Disk", adf::FileSystem::Ofs, 0).unwrap(),
+            adf_assemble_master(b"hunk", "program", "Disk", adf::FileSystem::Ofs, adf::DD, 0)
+                .unwrap(),
             expected
         );
     }
@@ -3034,6 +3072,7 @@ mod tests {
         let img = adf_assemble_volume(
             "Protected",
             adf::FileSystem::Ofs,
+            adf::DD,
             false,
             &[],
             &[("program".to_owned(), b"code".to_vec())],

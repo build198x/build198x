@@ -30,6 +30,7 @@ cargo install build198x-adf
 build198x-adf mygame -o mygame.adf
 build198x-adf mygame -o mygame.adf --protect e   # execute-only, matching `protect +e`
 build198x-adf mygame -o mygame.adf --ffs      # FFS: denser, needs Kickstart 2.0+
+build198x-adf mygame -o mygame.adf --hd       # 1760K high-density disk; needs an HD drive
 
 # build an arbitrary volume — files, directories, bootable or not:
 build198x-adf create data.adf --label Data --add readme.txt --add logo.iff=art/logo.iff --mkdir docs
@@ -56,6 +57,8 @@ single machine-readable line. Disks are written atomically.
 - **Protection bits** — `master --protect <rwed>` sets the program permissions;
   `create --protect-file <dest>=<rwed>` sets an added file's permissions. The
   default is `rwed`; `e` matches the AmigaDOS command `protect <file> +e`.
+- **Density** — `master` and `create` write an 880K DD floppy unless `--hd`
+  asks for a 1760K high-density one, which only an HD drive can read.
 - **`verify <disk.adf>`** — deep checksum + structure check.
 - **`info <disk.adf>`** — label, filesystem, and root listing; add
   `--recursive` for a deterministic complete-tree listing.
