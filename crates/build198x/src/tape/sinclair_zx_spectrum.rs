@@ -234,7 +234,9 @@ pub fn build(options: &Options<'_>) -> Result<Built, Error> {
 
     let floor = match options.loader {
         Loader::Generated { .. } => minimum_load_address(loader.program_length),
-        Loader::Authored(_) => PROG + u32::try_from(loader.program_length).unwrap_or(u32::MAX),
+        Loader::Authored(_) => {
+            PROG.saturating_add(u32::try_from(loader.program_length).unwrap_or(u32::MAX))
+        }
     };
     if load < floor {
         let why = match options.loader {
@@ -283,7 +285,8 @@ pub fn build(options: &Options<'_>) -> Result<Built, Error> {
 /// its blocks, given the tokenised loader's length.
 #[must_use]
 pub fn minimum_load_address(loader_length: usize) -> u32 {
-    PROG + u32::try_from(loader_length).unwrap_or(u32::MAX) + LOADER_HEADROOM
+    PROG.saturating_add(u32::try_from(loader_length).unwrap_or(u32::MAX))
+        .saturating_add(LOADER_HEADROOM)
 }
 
 /// The standard loader, in the listed form: colours and `CLEAR` first, then
@@ -337,6 +340,11 @@ pub fn test_card() -> Vec<u8> {
 mod tests {
     use super::*;
     use format198x_sinclair_zx_spectrum_tap::decode;
+
+    #[test]
+    fn an_impossible_loader_cannot_have_a_loadable_address() {
+        assert!(minimum_load_address(usize::MAX) > u32::from(u16::MAX));
+    }
 
     fn options(code: &[u8]) -> Options<'_> {
         Options {
