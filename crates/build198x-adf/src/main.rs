@@ -51,7 +51,7 @@ fn run(args: &[String]) -> ExitCode {
 }
 
 const ADF_MANIFEST_SCHEMA: &str = "build198x.adf.provenance.v1";
-const FORMAT198X_ADF_VERSION: &str = "0.3.4";
+const FORMAT198X_ADF_VERSION: &str = "0.3.5";
 
 fn cmd_manifest(args: &[String]) -> ExitCode {
     let path = match single_disk_arg("manifest", args) {
