@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.15](https://github.com/build198x/build198x/compare/build198x-v0.2.14...build198x-v0.2.15) - 2026-11-07
+
+### Added
+
+- *(tape)* master a Spectrum loader, loading screen and CODE onto one tape
+
+### Fixed
+
+- *(tape)* keep oversized loaders outside Spectrum memory
+
 ## [0.2.14](https://github.com/build198x/build198x/compare/build198x-v0.2.13...build198x-v0.2.14) - 2026-11-07
 
 ### Added
