@@ -4,7 +4,7 @@
 //! with no pipeline dependencies.
 //!
 //! ```text
-//! build198x-adf <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs]  # master (shorthand)
+//! build198x-adf <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs] [--hd]  # master (shorthand)
 //! build198x-adf master <exe> -o <out.adf> [flags]                              # master, explicit
 //! build198x-adf create <out.adf> [--add host=dest]... [--mkdir dir]... [flags]  # general volume builder
 //! build198x-adf verify <disk.adf>                                              # integrity check
@@ -17,7 +17,9 @@
 //! failure, `2` usage error. On failure a diagnostic goes to stderr. A mastered
 //! `.adf` is written atomically (temp file, then rename).
 
-use format198x_commodore_amiga_adf::{Disk, Entry, EntryKind, FileSystem, Volume};
+use format198x_commodore_amiga_adf::{
+    DD, Disk, Entry, EntryKind, FileSystem, Geometry, HD, Volume,
+};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::process::ExitCode;
@@ -231,6 +233,7 @@ fn cmd_master(args: &[String]) -> ExitCode {
     let mut name: Option<String> = None;
     let mut protect = 0;
     let mut fs = FileSystem::Ofs;
+    let mut geometry = DD;
 
     let mut i = 0;
     while i < rest.len() {
@@ -241,6 +244,8 @@ fn cmd_master(args: &[String]) -> ExitCode {
             }
             "--ffs" => fs = FileSystem::Ffs,
             "--ofs" => fs = FileSystem::Ofs,
+            "--dd" => geometry = DD,
+            "--hd" => geometry = HD,
             "-o" | "--output" => {
                 i += 1;
                 match rest.get(i) {
@@ -313,7 +318,7 @@ fn cmd_master(args: &[String]) -> ExitCode {
         }
     });
 
-    let img = match assemble_master(&exe, &name, &volume, fs, protect) {
+    let img = match assemble_master(&exe, &name, &volume, fs, geometry, protect) {
         Ok(img) => img,
         Err(e) => {
             eprintln!("build198x-adf: {e}");
@@ -339,9 +344,11 @@ fn assemble_master(
     name: &str,
     label: &str,
     fs: FileSystem,
+    geometry: Geometry,
     protect: u32,
 ) -> Result<Vec<u8>, format198x_commodore_amiga_adf::Error> {
     let mut volume = Volume::new(label, fs);
+    volume.set_geometry(geometry);
     volume.add_file("s/startup-sequence", format!("{name}\n").as_bytes())?;
     volume.add_file_with_protection(name, exe, protect)?;
     volume.set_bootable(true);
@@ -685,6 +692,7 @@ fn cmd_create(args: &[String]) -> ExitCode {
     let mut bootable = false;
     let mut startup: Option<String> = None;
     let mut fs = FileSystem::Ofs;
+    let mut geometry = DD;
 
     let mut i = 0;
     while i < rest.len() {
@@ -695,6 +703,8 @@ fn cmd_create(args: &[String]) -> ExitCode {
             }
             "--ffs" => fs = FileSystem::Ffs,
             "--ofs" => fs = FileSystem::Ofs,
+            "--dd" => geometry = DD,
+            "--hd" => geometry = HD,
             "--bootable" => bootable = true,
             "--label" => {
                 i += 1;
@@ -769,6 +779,7 @@ fn cmd_create(args: &[String]) -> ExitCode {
     let img = match build_volume(
         &label,
         fs,
+        geometry,
         bootable,
         &mkdirs,
         &adds,
@@ -902,9 +913,11 @@ fn default_label(out_path: &str) -> String {
 /// Read each host file and assemble the volume, mapping any failure to `exit 1`
 /// with a stderr diagnostic. Reading is split from [`assemble_volume`] so the
 /// build logic stays testable with in-memory bytes.
+#[allow(clippy::too_many_arguments)] // One parameter per `create` option.
 fn build_volume(
     label: &str,
     fs: FileSystem,
+    geometry: Geometry,
     bootable: bool,
     mkdirs: &[String],
     adds: &[(String, String)],
@@ -921,7 +934,16 @@ fn build_volume(
             }
         }
     }
-    match assemble_volume(label, fs, bootable, mkdirs, &files, protections, startup) {
+    match assemble_volume(
+        label,
+        fs,
+        geometry,
+        bootable,
+        mkdirs,
+        &files,
+        protections,
+        startup,
+    ) {
         Ok(img) => Ok(img),
         Err(e) => {
             eprintln!("build198x-adf: {e}");
@@ -933,9 +955,11 @@ fn build_volume(
 /// Build an ADF image from in-memory contents: directories, then files (each a
 /// `(dest, bytes)`), then an optional `s/startup-sequence`. Pure over the
 /// library `Volume`, so it is unit-testable without touching the disk.
+#[allow(clippy::too_many_arguments)] // One parameter per `create` option.
 fn assemble_volume(
     label: &str,
     fs: FileSystem,
+    geometry: Geometry,
     bootable: bool,
     mkdirs: &[String],
     files: &[(String, Vec<u8>)],
@@ -943,6 +967,7 @@ fn assemble_volume(
     startup: Option<&str>,
 ) -> Result<Vec<u8>, format198x_commodore_amiga_adf::Error> {
     let mut vol = Volume::new(label, fs);
+    vol.set_geometry(geometry);
     vol.set_bootable(bootable);
     for d in mkdirs {
         vol.add_dir(d)?;
@@ -1090,6 +1115,7 @@ fn verb_usage(verb: &str) -> String {
              \x20     --bootable        write a boot block (default: not bootable)\n\
              \x20     --startup <cmd>   write s/startup-sequence running <cmd> (implies --bootable)\n\
              \x20     --ofs | --ffs     filesystem (default: --ofs; --ffs needs KS2.0+)\n\
+             \x20     --dd | --hd       density (default: --dd, 880K; --hd is 1760K, needs an HD drive)\n\
              \x20     --format <fmt>    output format: text (default) or json"
             .to_owned(),
         "verify" => "build198x-adf verify — check an ADF's integrity (checksums + structure)\n\n\
@@ -1114,9 +1140,10 @@ fn verb_usage(verb: &str) -> String {
 fn usage() -> String {
     "build198x-adf master — master a hunk executable into a bootable Amiga floppy\n\n\
      Usage:\n\
-     \x20 build198x-adf [master] <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs]\n\n\
-     Writes an 880K DD `.adf` that boots straight into the program. OFS is the\n\
-     default and boots on a bare A500/KS1.3; --ffs is denser but needs KS2.0+.\n\n\
+     \x20 build198x-adf [master] <exe> -o <out.adf> [--volume <label>] [--name <file>] [--ffs] [--hd]\n\n\
+     Writes an `.adf` that boots straight into the program. OFS is the default\n\
+     and boots on a bare A500/KS1.3; --ffs is denser but needs KS2.0+. The disk\n\
+     is an 880K DD floppy unless --hd asks for a 1760K one, which needs an HD drive.\n\n\
      Options:\n\
      \x20 -o, --output <path>   the .adf to write (required)\n\
      \x20     --volume <label>  disk volume label (default: capitalised name)\n\
@@ -1124,6 +1151,7 @@ fn usage() -> String {
      \x20                       (default: the executable's basename)\n\
      \x20     --protect <rwed>  executable permissions (default: rwed)\n\
      \x20     --ofs | --ffs     filesystem (default: --ofs; --ffs needs KS2.0+)\n\
+     \x20     --dd | --hd       density (default: --dd, 880K; --hd is 1760K, needs an HD drive)\n\
      \x20     --format <fmt>    output format: text (default) or json\n\
      \x20 -h, --help            show this help"
         .to_owned()
@@ -1220,6 +1248,7 @@ mod tests {
         let img = assemble_volume(
             "MyGame",
             FileSystem::Ofs,
+            DD,
             true,
             &["data".to_owned()],
             &[
@@ -1242,7 +1271,8 @@ mod tests {
 
     #[test]
     fn assemble_empty_disk_is_valid() {
-        let img = assemble_volume("Blank", FileSystem::Ofs, false, &[], &[], &[], None).unwrap();
+        let img =
+            assemble_volume("Blank", FileSystem::Ofs, DD, false, &[], &[], &[], None).unwrap();
         let disk = Disk::open(&img).unwrap();
         disk.verify().unwrap();
         assert_eq!(disk.label(), "Blank");
@@ -1255,6 +1285,7 @@ mod tests {
             assemble_volume(
                 "D",
                 FileSystem::Ffs,
+                DD,
                 false,
                 &["c".to_owned()],
                 &[("x".to_owned(), vec![1, 2, 3])],
@@ -1295,7 +1326,7 @@ mod tests {
             format198x_commodore_amiga_adf::master_fs(b"hunk", "program", "Disk", FileSystem::Ofs)
                 .unwrap();
         assert_eq!(
-            assemble_master(b"hunk", "program", "Disk", FileSystem::Ofs, 0).unwrap(),
+            assemble_master(b"hunk", "program", "Disk", FileSystem::Ofs, DD, 0).unwrap(),
             expected
         );
     }
@@ -1305,6 +1336,7 @@ mod tests {
         let img = assemble_volume(
             "Protected",
             FileSystem::Ofs,
+            DD,
             false,
             &[],
             &[("program".to_owned(), b"code".to_vec())],
