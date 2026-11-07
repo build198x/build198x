@@ -16,19 +16,24 @@ PERMISSIVE = "(needs.custom-test-linux-packages.result == 'skipped' || needs.cus
 REQUIRED = "(needs.custom-test-linux-packages.result == 'success')"
 BUILD = "          dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json"
 GUARDED_BUILD = "          python scripts/source_lock.py build \"${{ join(matrix.targets, ',') }}\" dist-manifest.json target/distrib -- dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }}"
+RUNNER = "    runs-on: ${{ matrix.runner }}"
+RECOVERY_RUNNER = (
+    "    runs-on: ${{ matrix.runner == 'macos-14' && 'macos-15' || matrix.runner }}"
+)
 
 
 def transform(text: str) -> str:
     dependency = "  custom-test-linux-packages:\n    needs:\n      - plan\n      - build-local-artifacts\n"
     rust = "      - name: Install Rust non-interactively if not already installed"
     upload = "          name: artifacts-build-local-${{ join(matrix.targets, '_') }}\n          path: |\n            ${{ steps.cargo-dist.outputs.paths }}\n            ${{ env.BUILD_MANIFEST_NAME }}"
-    for anchor in (PERMISSIVE, dependency, rust, upload, BUILD):
+    for anchor in (PERMISSIVE, dependency, rust, upload, BUILD, RUNNER):
         if text.count(anchor) != 1:
             raise ValueError(
                 "cargo-dist template changed; review producer/publication guards"
             )
     return add_dispatch(
         text.replace(PERMISSIVE, REQUIRED)
+        .replace(RUNNER, RECOVERY_RUNNER)
         .replace(dependency, dependency + "      - build-global-artifacts\n")
         .replace(BUILD, GUARDED_BUILD)
         .replace(
