@@ -42,6 +42,9 @@ build198x-adf verify mygame.adf
 build198x-adf info mygame.adf
 build198x-adf info --recursive mygame.adf  # complete tree, with full paths
 build198x-adf manifest mygame.adf > mygame.manifest.json
+
+# copy one file out (names match as AmigaDOS matches them, ignoring case):
+build198x-adf extract mygame.adf s/startup-sequence -o startup.txt
 ```
 
 Output is human-readable by default; pass `--format json` on any verb for a
@@ -62,6 +65,9 @@ single machine-readable line. Disks are written atomically.
 - **`verify <disk.adf>`** — deep checksum + structure check.
 - **`info <disk.adf>`** — label, filesystem, and root listing; add
   `--recursive` for a deterministic complete-tree listing.
+- **`extract <disk.adf> <amiga-path> -o <host-path>`** — copy one file's exact
+  bytes out, reporting the spelling stored on the disk. The disk is only read;
+  an existing host file is kept unless `--force` is given.
 - **`manifest <disk.adf>`** — canonical, schema-versioned provenance JSON;
   `inspect` is an alias.
 
