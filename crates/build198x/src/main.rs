@@ -85,6 +85,7 @@ fn main() -> ExitCode {
             "adf" => adf_command(rest),
             "basic" => basic_command(rest),
             "plus3" => plus3_command(rest),
+            "tape" => tape_command(rest),
             "--version" | "-V" => {
                 println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
                 ExitCode::SUCCESS
@@ -1282,6 +1283,7 @@ fn top_usage() -> String {
          \x20 {name} basic <in.bas> --machine <id> -o <out> [--name <name>] [--no-autorun]\n\
          \x20 {name} basic lint <in.bas>... --machine <id> [--fix]\n\
          \x20 {name} plus3 --basic <loader.bas> --code <code.bin> --load-address <decimal> -o <out.dsk>\n\
+         \x20 {name} tape --machine <id> --code <code.bin> --load-address <decimal> -o <out.tap> [--screen <s.scr>] [--basic <loader.bas>]\n\
          \x20 {name} --version\n\
          \x20 {name} --help\n\n\
          run `{name} image --help` or `{name} beeper --help` for each converter's flags.",
@@ -2550,6 +2552,283 @@ fn plus3_command(args: &[String]) -> ExitCode {
             built.autorun,
             payload.len(),
             load
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+const TAPE_USAGE: &str = "build198x tape — master a tape: loader, loading screen and program
+
+usage:
+  build198x tape --machine <id> --code <code.bin> --load-address <decimal> -o <out.tap> [options]
+
+machines:
+  sinclair-zx-spectrum   a .tap of BASIC loader, SCREEN$ and CODE
+
+On the Spectrum the loader is generated: it sets the colours, CLEARs below the CODE, loads the
+screen and the CODE, and calls the entry. --basic replaces it with your own
+listing, used as written; the loader options below then do not apply.
+
+options:
+  --entry <decimal>        address the loader calls (default: the load address)
+  --screen <screen.scr>    6912-byte loading screen (default: a test card)
+  --basic <loader.bas>     your own loader instead of the generated one
+  --model 48k|16k          Spectrum model, which sets the top of RAM (default: 48k)
+  --border|--paper|--ink <0-7>   generated loader colours (default: 0)
+  --name <name>            loader block name (default: the output file's stem)
+  --code-name <name>       CODE block name (default: --name)
+  --screen-name <name>     screen block name (default: screen)
+  --format text|json       report format (default: text)
+  --force                  replace an existing output file";
+
+/// `build198x tape --machine <id>` — master a loader, a loading screen and a
+/// program onto one tape. The Spectrum is the only machine so far.
+/// Exit codes follow `plus3`: 2 usage, 3 unreadable input, 4 invalid
+/// content, 5 output.
+fn tape_command(args: &[String]) -> ExitCode {
+    let fail = |message: &str, code| {
+        eprintln!("build198x tape: {message}");
+        ExitCode::from(code)
+    };
+    let (fmt, args) = match adf_take_format(args) {
+        Ok(value) => value,
+        Err(e) => return fail(&e, 2),
+    };
+    let (mut code, mut load, mut output, mut entry, mut screen, mut basic) =
+        (None, None, None, None, None, None);
+    let (mut model, mut name, mut code_name, mut screen_name) = (None, None, None, None);
+    let mut machine = None;
+    let (mut border, mut paper, mut ink) = (None, None, None);
+    let mut force = false;
+    let mut i = 0;
+    while i < args.len() {
+        let target = match args[i].as_str() {
+            "--help" | "-h" => {
+                println!("{TAPE_USAGE}");
+                return ExitCode::SUCCESS;
+            }
+            "--force" => {
+                force = true;
+                i += 1;
+                continue;
+            }
+            "--machine" => &mut machine,
+            "--code" => &mut code,
+            "--load-address" => &mut load,
+            "-o" | "--output" => &mut output,
+            "--entry" => &mut entry,
+            "--screen" => &mut screen,
+            "--basic" => &mut basic,
+            "--model" => &mut model,
+            "--name" => &mut name,
+            "--code-name" => &mut code_name,
+            "--screen-name" => &mut screen_name,
+            "--border" => &mut border,
+            "--paper" => &mut paper,
+            "--ink" => &mut ink,
+            other => return fail(&format!("unknown argument `{other}`\n\n{TAPE_USAGE}"), 2),
+        };
+        i += 1;
+        let Some(value) = args.get(i) else {
+            return fail(&format!("{} needs a value", args[i - 1]), 2);
+        };
+        if target.replace(value.as_str()).is_some() {
+            return fail(&format!("{} given twice", args[i - 1]), 2);
+        }
+        i += 1;
+    }
+    let (Some(machine), Some(code), Some(load), Some(output)) = (machine, code, load, output)
+    else {
+        return fail(
+            &format!("--machine, --code, --load-address and -o are required\n\n{TAPE_USAGE}"),
+            2,
+        );
+    };
+    if !build198x::tape::MACHINES.contains(&machine) {
+        return fail(
+            &format!(
+                "no tape master for `{machine}` yet; supported: {}",
+                build198x::tape::MACHINES.join(", ")
+            ),
+            2,
+        );
+    }
+    let address = |flag: &str, value: &str| -> Result<u16, ExitCode> {
+        value
+            .parse()
+            .map_err(|_| fail(&format!("{flag} must be decimal 0..65535"), 2))
+    };
+    let colour = |flag: &str, value: Option<&str>| -> Result<u8, ExitCode> {
+        match value {
+            None => Ok(0),
+            Some(v) => v
+                .parse()
+                .ok()
+                .filter(|c| *c <= 7)
+                .ok_or_else(|| fail(&format!("{flag} must be 0..7"), 2)),
+        }
+    };
+    let load = match address("--load-address", load) {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+    let entry = match entry.map(|v| address("--entry", v)).transpose() {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+    let model = match model {
+        None => build198x::tape::sinclair_zx_spectrum::Model::K48,
+        Some(id) => match build198x::tape::sinclair_zx_spectrum::Model::from_id(id) {
+            Some(m) => m,
+            None => return fail("--model must be 48k or 16k", 2),
+        },
+    };
+    if basic.is_some() {
+        let generated_only = [
+            ("--entry", entry.is_some()),
+            ("--border", border.is_some()),
+            ("--paper", paper.is_some()),
+            ("--ink", ink.is_some()),
+        ];
+        if let Some((flag, _)) = generated_only.iter().find(|(_, given)| *given) {
+            return fail(
+                &format!(
+                    "{flag} sets up the generated loader; with --basic your listing does that"
+                ),
+                2,
+            );
+        }
+    }
+    let (border, paper, ink) = match (
+        colour("--border", border),
+        colour("--paper", paper),
+        colour("--ink", ink),
+    ) {
+        (Ok(b), Ok(p), Ok(i)) => (b, p, i),
+        (Err(code), _, _) | (_, Err(code), _) | (_, _, Err(code)) => return code,
+    };
+
+    let out = Path::new(output);
+    if !out
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("tap"))
+    {
+        return fail("output must have a .tap extension", 2);
+    }
+    let stem = out
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "program".to_owned());
+    let name = name.map_or(stem, str::to_owned);
+    let code_name = code_name.map_or_else(|| name.clone(), str::to_owned);
+    let screen_name = screen_name.unwrap_or("screen");
+
+    // Canonical paths catch aliases and symlinks, as in `plus3`.
+    let inputs: Vec<&str> = [Some(code), screen, basic].into_iter().flatten().collect();
+    if let Ok(canonical) = out.canonicalize()
+        && inputs
+            .iter()
+            .any(|p| Path::new(p).canonicalize().is_ok_and(|p| p == canonical))
+    {
+        return fail("output aliases an input", 5);
+    }
+    if out.symlink_metadata().is_ok() && !force {
+        return fail("output already exists (use --force)", 5);
+    }
+
+    let payload = match std::fs::read(code) {
+        Ok(v) => v,
+        Err(e) => return fail(&format!("cannot read {code}: {e}"), 3),
+    };
+    let screen_bytes = match screen.map(std::fs::read).transpose() {
+        Ok(v) => v,
+        Err(e) => return fail(&format!("cannot read {}: {e}", screen.unwrap_or("")), 3),
+    };
+    let basic_source = match basic.map(std::fs::read_to_string).transpose() {
+        Ok(v) => v,
+        Err(e) => return fail(&format!("cannot read {}: {e}", basic.unwrap_or("")), 3),
+    };
+    let loader = match &basic_source {
+        Some(source) => build198x::tape::sinclair_zx_spectrum::Loader::Authored(source),
+        None => build198x::tape::sinclair_zx_spectrum::Loader::Generated {
+            border,
+            paper,
+            ink,
+            entry,
+        },
+    };
+    let built = match build198x::tape::sinclair_zx_spectrum::build(
+        &build198x::tape::sinclair_zx_spectrum::Options {
+            code: &payload,
+            load_address: load,
+            screen: screen_bytes.as_deref(),
+            loader,
+            model,
+            name: &name,
+            code_name: &code_name,
+            screen_name,
+        },
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            let source = basic.unwrap_or("generated loader");
+            let message = if e.line == 0 {
+                e.message
+            } else {
+                format!("{source}:{}: {}", e.line, e.message)
+            };
+            return fail(&message, 4);
+        }
+    };
+    if let Err(e) = write_atomic(out, &built.bytes) {
+        return fail(&e.to_string(), 5);
+    }
+
+    let number = |v: Option<u16>| v.map_or_else(|| "null".to_owned(), |v| v.to_string());
+    if fmt == AdfFormat::Json {
+        println!(
+            "{{\"converter_version\":\"{}\",\"status\":\"ok\",\"output\":\"{}\",\"machine\":\"{}\",\"format\":\"zx-spectrum-tap\",\"bytes\":{},\"model\":\"{}\",\"loader\":\"{}\",\"autorun\":{},\"loader_length\":{},\"clear\":{},\"screen\":\"{}\",\"code_length\":{},\"load_address\":{},\"entry\":{}}}",
+            env!("CARGO_PKG_VERSION"),
+            json_escape(output),
+            machine,
+            built.bytes.len(),
+            model.id(),
+            if basic.is_some() {
+                "authored"
+            } else {
+                "generated"
+            },
+            built.autorun,
+            built.loader_length,
+            number(built.clear),
+            if built.test_card {
+                "test-card"
+            } else {
+                "supplied"
+            },
+            payload.len(),
+            load,
+            number(built.entry),
+        );
+    } else {
+        let call = built
+            .entry
+            .map_or_else(String::new, |e| format!(", called at {e}"));
+        let screen = if built.test_card {
+            "test card"
+        } else {
+            "SCREEN$"
+        };
+        println!(
+            "{output}: {} bytes; {} loader, {screen}, CODE {} bytes at {load}{call} ({})",
+            built.bytes.len(),
+            if basic.is_some() {
+                "authored"
+            } else {
+                "generated"
+            },
+            payload.len(),
+            model.id().to_uppercase(),
         );
     }
     ExitCode::SUCCESS

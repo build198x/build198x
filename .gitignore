@@ -1,6 +1,8 @@
 /target
 **/*.rs.bk
 *.bin
+# Raw program fixtures are inputs the tests read, not build output.
+!crates/build198x/tests/fixtures/**/*.bin
 a.out
 .DS_Store
 
