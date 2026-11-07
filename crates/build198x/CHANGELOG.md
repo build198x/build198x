@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.14](https://github.com/build198x/build198x/compare/build198x-v0.2.13...build198x-v0.2.14) - 2026-11-07
+
+### Added
+
+- *(adf)* extract one file's exact bytes from an ADF
+- *(adf)* write 1760K high-density disks with --hd
+
 ## [0.2.13](https://github.com/build198x/build198x/compare/build198x-v0.2.12...build198x-v0.2.13) - 2026-10-22
 
 ### Fixed

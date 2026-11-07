@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.14](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.13...build198x-adf-v0.2.14) - 2026-11-07
+
+### Added
+
+- *(adf)* extract one file's exact bytes from an ADF
+- *(adf)* write 1760K high-density disks with --hd
+
+### Dependencies
+
+- *(deps)* bump sha2 from 0.10.9 to 0.11.1
+
+### Fixed
+
+- *(adf)* name library 0.3.5 in the provenance manifest
+
 ## [0.2.13](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.12...build198x-adf-v0.2.13) - 2026-10-22
 
 ### Fixed
