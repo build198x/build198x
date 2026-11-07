@@ -11,16 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(adf)* extract one file's exact bytes from an ADF
-- *(adf)* write 1760K high-density disks with --hd
+- `extract <disk.adf> <amiga-path> -o <host-path>` copies one file's exact
+  bytes out of an ADF. Names match the way AmigaDOS matches them, ignoring
+  case, and the report gives the spelling stored on the disk. The disk is only
+  read; an existing host file is kept unless `--force` is given.
+  ([#91](https://github.com/build198x/build198x/pull/91))
+- `--hd` writes a 1760K high-density disk from `master` and `create`, for
+  content that doesn't fit the 880K DD default. Only an HD drive reads one.
+  ([#89](https://github.com/build198x/build198x/pull/89))
 
-### Dependencies
+### Changed
 
-- *(deps)* bump sha2 from 0.10.9 to 0.11.1
-
-### Fixed
-
-- *(adf)* name library 0.3.5 in the provenance manifest
+- Built on format198x-commodore-amiga-adf 0.3.5, which `manifest` now names
+  as the library that read the disk, and on sha2 0.11.
 
 ## [0.2.13](https://github.com/build198x/build198x/compare/build198x-adf-v0.2.12...build198x-adf-v0.2.13) - 2026-10-22
 
