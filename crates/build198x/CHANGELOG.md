@@ -11,11 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(tape)* master a Spectrum loader, loading screen and CODE onto one tape
+- Build a bootable ZX Spectrum tape with `build198x tape --machine sinclair-zx-spectrum --code game.bin --load-address 32768 -o game.tap`. The tape includes an auto-running BASIC loader, a loading screen and the CODE. Supply your own screen with `--screen`, or your own loader with `--basic`; otherwise it generates both.
+- Check CODE placement against a 16K or 48K machine before writing. Existing outputs require `--force`, and an output cannot overwrite an input.
 
 ### Fixed
 
-- *(tape)* keep oversized loaders outside Spectrum memory
+- Keep an oversized loader's minimum load address outside Spectrum memory, avoiding an arithmetic overflow or a wrapped address.
 
 ## [0.2.14](https://github.com/build198x/build198x/compare/build198x-v0.2.13...build198x-v0.2.14) - 2026-11-07
 
